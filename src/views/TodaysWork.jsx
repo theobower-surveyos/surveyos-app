@@ -40,12 +40,22 @@ export default function TodaysWork({ supabase, project, profile, onSyncComplete 
   const [stakingErrors, setStakingErrors] = useState([]);
 
   const isDemobilized = project?.status === 'field_complete' || project?.status === 'completed';
-  const hasDeployed = !!project?.actual_start_time;
+
+  // Persist deploy state in localStorage so a page refresh doesn't reset the lock screen
+  const deployKey = project?.id ? `deployed_${project.id}` : null;
+  const hasDeployed = !!project?.actual_start_time || (deployKey && localStorage.getItem(deployKey) === 'true');
 
   useEffect(() => {
     if (project?.scope_checklist) setChecklist(project.scope_checklist);
     if (project?.required_equipment) setManifest(project.required_equipment);
   }, [project]);
+
+  // Sync localStorage when project deploy state is confirmed from DB
+  useEffect(() => {
+    if (!deployKey) return;
+    if (project?.actual_start_time) localStorage.setItem(deployKey, 'true');
+    if (isDemobilized) localStorage.removeItem(deployKey);
+  }, [project?.actual_start_time, isDemobilized, deployKey]);
 
   // --- Recalculate staking errors when either point set changes ---
   useEffect(() => {
@@ -96,7 +106,10 @@ export default function TodaysWork({ supabase, project, profile, onSyncComplete 
           } else if (item.actionType === 'photo_upload') {
             const { fileName, base64, contentType } = item.payload;
             const blob = base64ToBlob(base64, contentType);
-            const res = await supabase.storage.from('project-photos').upload(fileName, blob);
+            const res = await supabase.storage.from('project-photos').upload(fileName, blob, {
+              contentType: contentType || 'image/jpeg',
+              upsert: false,
+            });
             error = res.error;
           } else if (item.actionType === 'checklist_toggle') {
             const res = await supabase.from('projects').update({ scope_checklist: item.payload.checklist }).eq('id', item.payload.projectId);
@@ -121,6 +134,10 @@ export default function TodaysWork({ supabase, project, profile, onSyncComplete 
 
   const handleDeploy = async () => {
     const startTime = new Date().toISOString();
+
+    // Write to localStorage immediately so the UI stays unlocked even if the page refreshes mid-flight
+    if (deployKey) localStorage.setItem(deployKey, 'true');
+
     const { error } = await supabase.from('projects').update({
       status: 'in_progress',
       actual_start_time: startTime,
