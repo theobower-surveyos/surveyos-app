@@ -1,0 +1,44 @@
+:root {
+  /* Core Brand Colors */
+  --brand-teal: #0D4F4F;
+  --brand-teal-light: #1A6B6B;
+  --brand-amber: #D4912A;
+  --brand-amber-muted: rgba(212, 145, 42, 0.15);
+  
+  /* Neutral Scale (The Skeleton) */
+  --bg-dark: #0F172A;        /* Deep Navy/Charcoal */
+  --bg-surface: #1E293B;     /* Card/Panel Background */
+  --border-subtle: #334155;
+  --text-main: #F8FAFC;      /* High contrast white */
+  --text-muted: #94A3B8;     /* Gray for labels */
+
+  /* Semantic Colors */
+  --success: #10B981;
+  --error: #EF4444;
+}
+
+/* The Professional Typography Standard */
+body {
+  margin: 0;
+  font-family: 'Inter', -apple-system, sans-serif;
+  background-color: var(--bg-dark);
+  color: var(--text-main);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Force Tabular Numbers for all Coordinate Displays */
+.coordinate-data {
+  font-family: 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.5px;
+}
+
+/* The "Glove Mode" Button Standard */
+.btn-field {
+  min-height: 52px; /* Minimum 44px is standard, we go bigger for field use */
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
