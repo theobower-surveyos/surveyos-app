@@ -1,6 +1,12 @@
 {
+  "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "claude-flow"
   ],
-  "enableAllProjectMcpServers": true
+  "permissions": {
+    "allow": [
+      "Bash(export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1)",
+      "Bash(echo \"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=$CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS\")"
+    ]
+  }
 }

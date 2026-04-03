@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import ProjectDrawer from '../components/ProjectDrawer';
 import DeploymentModal from '../components/DeploymentModal';
+import IntelligenceDrawer from './IntelligenceDrawer';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -99,6 +100,8 @@ export default function CommandCenter({ profile, projects, teamMembers, onProjec
 
   // Intelligence Drawer
   const [drawerProject, setDrawerProject] = useState(null);
+  const [isIntelOpen, setIsIntelOpen] = useState(false);
+  const [selectedProjectId, setSelectedProjectId] = useState(null);
 
   // Deployment Modal
   const [isDeploying, setIsDeploying] = useState(false);
@@ -367,7 +370,7 @@ export default function CommandCenter({ profile, projects, teamMembers, onProjec
                     <div style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', sans-serif", minWidth: '180px' }}>
                       <strong style={{ display: 'block', fontSize: '0.95em', marginBottom: '4px', color: '#fff' }}>{proj?.project_name}</strong>
                       <span style={{ display: 'block', fontSize: '0.72em', color: '#666', fontFamily: "'JetBrains Mono', monospace", marginBottom: '10px' }}>{proj?.id ? proj.id.substring(0, 8).toUpperCase() : '---'}</span>
-                      <button onClick={() => setDrawerProject(proj)} style={{ width: '100%', padding: '8px', backgroundColor: '#007AFF', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '0.8em', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit' }}>Select</button>
+                      <button onClick={() => { setSelectedProjectId(proj?.id); setIsIntelOpen(true); }} style={{ width: '100%', padding: '8px', backgroundColor: '#007AFF', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '0.8em', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit' }}>Select</button>
                     </div>
                   </Popup>
                 </Marker>
@@ -426,11 +429,18 @@ export default function CommandCenter({ profile, projects, teamMembers, onProjec
         </div>
       </>}
 
-      {/* INTELLIGENCE DRAWER */}
+      {/* PROJECT DRAWER */}
       <ProjectDrawer
         project={drawerProject}
         isOpen={!!drawerProject}
         onClose={() => setDrawerProject(null)}
+      />
+
+      {/* INTELLIGENCE DRAWER */}
+      <IntelligenceDrawer
+        isOpen={isIntelOpen}
+        onClose={() => { setIsIntelOpen(false); setSelectedProjectId(null); }}
+        projectId={selectedProjectId}
       />
 
       {/* DEPLOYMENT MODAL */}
