@@ -42,3 +42,14 @@ body {
   cursor: pointer;
   transition: all 0.2s ease;
 }
+.morning-brief-card {
+  /* Using 'translate' instead of 'transform' bypasses the animation lock */
+  transition: translate 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+.morning-brief-card:hover {
+  translate: 0 -6px; 
+  /* Heavier black shadow for depth, plus a faint white ring for the 'glow' effect */
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.1); 
+  cursor: pointer;
+}

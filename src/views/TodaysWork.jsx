@@ -1,8 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { vaultAction, getVaultQueue, removeFromVault } from '../lib/offlineStore';
-import { calculateDeltas } from '../lib/harrisonMath';
-
-const SYNC_INTERVAL_MS = 5000;
+import { vaultAction, vaultPhoto, getVaultStats } from '../lib/offlineStore';
+import { SyncEngine } from '../lib/syncEngine';
+import { calculateDeltas, TOLERANCE_LIMIT } from '../lib/harrisonMath';
 
 // --- Shared Styles (Brand: Quiet Confidence) ---
 const monoData = { fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' };
@@ -75,58 +74,34 @@ export default function TodaysWork({ supabase, project, profile, onSyncComplete 
     setStakingErrors(errors);
   }, [designPoints, asBuiltPoints]);
 
-  // --- Refresh vault count ---
+  // --- Vault count from SyncEngine stats ---
   const refreshVaultCount = useCallback(async () => {
     try {
-      const queue = await getVaultQueue();
-      setVaultCount(queue.filter(item => item.status === 'pending').length);
-    } catch { /* IndexedDB unavailable — degrade gracefully */ }
+      const stats = await getVaultStats();
+      setVaultCount(stats.pending + stats.inFlight);
+    } catch { /* IndexedDB unavailable */ }
   }, []);
 
   // =========================================================
-  // BACKGROUND SYNC LOOP — drains the IndexedDB vault to Supabase
+  // SYNC ENGINE LISTENER — replaces the old setInterval loop.
+  // The SyncEngine runs globally (booted in main.jsx) and handles
+  // adaptive intervals, retry backoff, and Service Worker fallback.
   // =========================================================
   useEffect(() => {
     refreshVaultCount();
 
-    const intervalId = setInterval(async () => {
-      let queue;
-      try { queue = await getVaultQueue(); } catch { return; }
+    const engine = SyncEngine.getInstance();
+    if (!engine) return;
 
-      const pending = queue.filter(item => item.status === 'pending');
-      if (pending.length === 0) return;
-
-      for (const item of pending) {
-        try {
-          let error = null;
-
-          if (item.actionType === 'csv_upload') {
-            const res = await supabase.from('survey_points').insert(item.payload.points);
-            error = res.error;
-          } else if (item.actionType === 'photo_upload') {
-            const { fileName, base64, contentType } = item.payload;
-            const blob = base64ToBlob(base64, contentType);
-            const res = await supabase.storage.from('project-photos').upload(fileName, blob, {
-              contentType: contentType || 'image/jpeg',
-              upsert: false,
-            });
-            error = res.error;
-          } else if (item.actionType === 'checklist_toggle') {
-            const res = await supabase.from('projects').update({ scope_checklist: item.payload.checklist }).eq('id', item.payload.projectId);
-            error = res.error;
-          }
-
-          if (!error) {
-            await removeFromVault(item.id);
-            if (onSyncComplete) onSyncComplete();
-          }
-        } catch { /* Network down — will retry next interval */ }
+    const unsub = engine.onChange((event, data) => {
+      if (event === 'sync_end') {
+        refreshVaultCount();
+        if (data?.synced > 0 && onSyncComplete) onSyncComplete();
       }
-      await refreshVaultCount();
-    }, SYNC_INTERVAL_MS);
+    });
 
-    return () => clearInterval(intervalId);
-  }, [supabase, onSyncComplete, refreshVaultCount]);
+    return unsub;
+  }, [onSyncComplete, refreshVaultCount]);
 
   // =========================================================
   // HANDLERS — all vault-first, then optimistic UI
@@ -229,22 +204,22 @@ export default function TodaysWork({ supabase, project, profile, onSyncComplete 
     if (!file) return;
 
     const fileExt = file.name.split('.').pop() || 'jpg';
-    const base64 = await fileToBase64(file);
 
-    const vaultPhoto = async (lat, lng) => {
+    const savePhoto = async (lat, lng) => {
       const coordSlug = (lat != null && lng != null)
         ? `${lat.toFixed(5)}_${lng.toFixed(5)}`
         : 'Unknown_Unknown';
       const fileName = `${project.id}/Geotag_${coordSlug}_${Date.now()}.${fileExt}`;
 
-      await vaultAction('photo_upload', { fileName, base64, contentType: file.type });
+      // Store raw File blob (not base64) — saves 33% space in IndexedDB
+      await vaultPhoto(file, fileName, file.type, project.id);
       await refreshVaultCount();
     };
 
     if (!navigator.geolocation) {
       alert('No GPS lock, saving photo without coordinates');
       setPhotoStatus('Photo saved (no GPS). Syncing in background...');
-      await vaultPhoto(null, null);
+      await savePhoto(null, null);
       return;
     }
 
@@ -252,12 +227,12 @@ export default function TodaysWork({ supabase, project, profile, onSyncComplete 
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         setPhotoStatus('Vaulting geotagged photo...');
-        await vaultPhoto(position.coords.latitude, position.coords.longitude);
+        await savePhoto(position.coords.latitude, position.coords.longitude);
         setPhotoStatus('Photo saved. Syncing in background...');
       },
       async () => {
         alert('No GPS lock, saving photo without coordinates');
-        await vaultPhoto(null, null);
+        await savePhoto(null, null);
         setPhotoStatus('Photo saved (no GPS). Syncing in background...');
       },
       { enableHighAccuracy: true, timeout: 10000 }
@@ -351,18 +326,46 @@ export default function TodaysWork({ supabase, project, profile, onSyncComplete 
 
         {/* RIGHT COLUMN: CSV Upload + Camera + QA/QC */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {/* Hardware Sync */}
+          {/* Data Uploads */}
           <div style={{ backgroundColor: colors.cardBg, padding: '20px', borderRadius: '8px', border: `1px solid ${colors.border}` }}>
-            <h3 style={{ margin: '0 0 10px 0', color: colors.textPrimary }}>Hardware Sync</h3>
-            <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
-              <button onClick={() => setUploadMode('design')} style={{ flex: 1, padding: '10px', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', backgroundColor: uploadMode === 'design' ? colors.amber : colors.bgDark, color: uploadMode === 'design' ? '#000' : '#fff' }}>Design</button>
-              <button onClick={() => setUploadMode('as_built')} style={{ flex: 1, padding: '10px', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', backgroundColor: uploadMode === 'as_built' ? colors.blue : colors.bgDark, color: '#fff' }}>As-Builts</button>
+            <h3 style={{ margin: '0 0 14px 0', color: colors.textPrimary }}>Data Uploads</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
+              {/* Design .csv */}
+              <div
+                onClick={() => { setUploadMode('design'); fileInputRef.current.click(); }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: '8px', border: `1px dashed ${colors.amber}`, backgroundColor: 'rgba(212, 145, 42, 0.04)', cursor: 'pointer' }}
+              >
+                <div>
+                  <span style={{ display: 'block', fontSize: '0.85em', fontWeight: '600', color: colors.amber }}>Design Files</span>
+                  <span style={{ fontSize: '0.72em', color: colors.textMuted }}>Office COGO (.csv)</span>
+                </div>
+                <span style={{ fontSize: '0.72em', fontWeight: '600', color: colors.textMuted }}>.csv</span>
+              </div>
+              {/* Field Data */}
+              <div
+                onClick={() => { setUploadMode('as_built'); fileInputRef.current.click(); }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: '8px', border: `1px dashed ${colors.blue}`, backgroundColor: 'rgba(59, 130, 246, 0.04)', cursor: 'pointer' }}
+              >
+                <div>
+                  <span style={{ display: 'block', fontSize: '0.85em', fontWeight: '600', color: colors.blue }}>Field Data</span>
+                  <span style={{ fontSize: '0.72em', color: colors.textMuted }}>Instrument exports (.jxl, .job, .csv)</span>
+                </div>
+                <span style={{ fontSize: '0.72em', fontWeight: '600', color: colors.textMuted }}>.csv .jxl</span>
+              </div>
+              {/* As-Built / Deliverables */}
+              <div
+                onClick={() => { setUploadMode('as_built'); fileInputRef.current.click(); }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: '8px', border: `1px dashed ${colors.green}`, backgroundColor: 'rgba(5, 150, 105, 0.04)', cursor: 'pointer' }}
+              >
+                <div>
+                  <span style={{ display: 'block', fontSize: '0.85em', fontWeight: '600', color: colors.green }}>As-Built / Deliverables</span>
+                  <span style={{ fontSize: '0.72em', color: colors.textMuted }}>Final verification (.pdf, .csv)</span>
+                </div>
+                <span style={{ fontSize: '0.72em', fontWeight: '600', color: colors.textMuted }}>.pdf .csv</span>
+              </div>
             </div>
-            <div style={{ border: `2px dashed ${uploadMode === 'design' ? colors.amber : colors.blue}`, borderRadius: '8px', padding: '20px', textAlign: 'center', cursor: isSyncing ? 'wait' : 'pointer' }} onClick={() => !isSyncing && fileInputRef.current.click()}>
-              <input type="file" accept=".csv,.txt" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileUpload} />
-              <p style={{ margin: 0, fontWeight: 'bold', fontSize: '1.1em' }}>{isSyncing ? 'Processing...' : 'Tap to Upload .CSV'}</p>
-            </div>
-            {syncStatus && <p style={{ margin: '10px 0 0', fontSize: '0.85em', color: colors.textMuted, textAlign: 'center', ...monoData }}>{syncStatus}</p>}
+            <input type="file" accept=".csv,.txt,.jxl,.job,.pdf" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileUpload} />
+            {syncStatus && <p style={{ margin: '6px 0 0', fontSize: '0.82em', color: colors.textMuted, textAlign: 'center', ...monoData }}>{syncStatus}</p>}
           </div>
 
           {/* Site Documentation */}
@@ -383,8 +386,8 @@ export default function TodaysWork({ supabase, project, profile, onSyncComplete 
                 <table style={{ width: '100%', borderCollapse: 'collapse', ...monoData, fontSize: '0.85em' }}>
                   <thead>
                     <tr style={{ borderBottom: `2px solid ${colors.border}` }}>
-                      {['Pt#', 'Desc', '\u0394N', '\u0394E', '\u0394Z', 'Hz Diff'].map(h => (
-                        <th key={h} style={{ padding: '8px 10px', textAlign: 'right', color: colors.textMuted, fontWeight: 600, whiteSpace: 'nowrap', ...(h === 'Desc' ? { textAlign: 'left' } : {}) }}>{h}</th>
+                      {['Pt#', 'Desc', '\u0394N', '\u0394E', '\u0394Z', '3D Vec', 'Status'].map(h => (
+                        <th key={h} style={{ padding: '8px 10px', textAlign: 'right', color: colors.textMuted, fontWeight: 600, whiteSpace: 'nowrap', ...(h === 'Desc' || h === 'Status' ? { textAlign: 'left' } : {}) }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -392,13 +395,16 @@ export default function TodaysWork({ supabase, project, profile, onSyncComplete 
                     {stakingErrors.map((row) => {
                       const oot = row.outOfTolerance;
                       return (
-                        <tr key={row.pointNumber} style={{ borderBottom: `1px solid ${colors.border}` }}>
+                        <tr key={row.pointNumber} style={{ borderBottom: `1px solid ${colors.border}`, ...(oot ? { borderLeft: `3px solid ${colors.red}` } : {}) }}>
                           <td style={{ padding: '8px 10px', textAlign: 'right', color: colors.textPrimary }}>{row.pointNumber}</td>
                           <td style={{ padding: '8px 10px', textAlign: 'left', color: colors.textMuted, fontFamily: "'Inter', sans-serif" }}>{row.description}</td>
                           <td style={{ padding: '8px 10px', textAlign: 'right', color: colors.textPrimary }}>{row.dN}</td>
                           <td style={{ padding: '8px 10px', textAlign: 'right', color: colors.textPrimary }}>{row.dE}</td>
                           <td style={{ padding: '8px 10px', textAlign: 'right', color: colors.textPrimary }}>{row.dZ}</td>
-                          <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 'bold', color: oot ? colors.red : colors.greenLight }}>{row.horizontalDiff}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 'bold', color: oot ? colors.red : colors.greenLight }}>{row.vector3d}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'left' }}>
+                            <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '0.8em', fontWeight: '700', backgroundColor: oot ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)', color: oot ? colors.red : colors.greenLight }}>{row.status}</span>
+                          </td>
                         </tr>
                       );
                     })}
@@ -406,7 +412,7 @@ export default function TodaysWork({ supabase, project, profile, onSyncComplete 
                 </table>
               </div>
               <p style={{ margin: '10px 0 0', fontSize: '0.75em', color: colors.textMuted }}>
-                Tolerance: 0.10 ft. <span style={{ color: colors.red }}>Red</span> = out of tolerance.
+                3D Vector Tolerance: {TOLERANCE_LIMIT} ft. <span style={{ color: colors.red }}>Red</span> = out of spec.
               </p>
             </div>
           )}
@@ -450,20 +456,3 @@ function parseCSV(csvText, projectId) {
   return points;
 }
 
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
-function base64ToBlob(base64, contentType) {
-  const parts = base64.split(',');
-  const byteString = atob(parts[1]);
-  const ab = new ArrayBuffer(byteString.length);
-  const ia = new Uint8Array(ab);
-  for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
-  return new Blob([ab], { type: contentType });
-}
