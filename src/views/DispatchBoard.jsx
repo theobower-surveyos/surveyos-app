@@ -1,12 +1,45 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { supabase } from '../supabaseClient';
 import { DndContext, DragOverlay } from '@dnd-kit/core';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
-import { ArrowLeft, Calendar as CalIcon, Users, Truck, AlertTriangle, ShieldCheck, Clock } from 'lucide-react';
+import { ArrowLeft, Calendar as CalIcon, Users, Truck, AlertTriangle, ShieldCheck, Clock, Activity } from 'lucide-react';
 
 const FONT = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif";
 const MONO = "'JetBrains Mono', 'SF Mono', monospace";
 const ASSIGNED_PREFIX = 'assigned::';
+
+const crews = [
+  { id: 'c1', name: 'Crew Alpha', type: '3-Man Boundary', equipment: 'Trimble S7, R12i' },
+  { id: 'c2', name: 'Crew Bravo', type: '2-Man Topo', equipment: 'Leica RTC360' },
+  { id: 'c3', name: 'Crew Charlie', type: '1-Man Drone', equipment: 'DJI Matrice 300' }
+];
+
+// Map crew name -> local crew id
+function crewIdFromName(name) {
+  const match = crews.find(c => c.name === name);
+  return match ? match.id : null;
+}
+
+// Map local crew id -> crew name
+function crewNameFromId(id) {
+  const match = crews.find(c => c.id === id);
+  return match ? match.name : null;
+}
+
+// Normalize a Supabase project row into the shape our UI expects
+// All IDs are coerced to strings to prevent type mismatches with dnd-kit
+function normalizeProject(row, focusId) {
+  const projId = String(row.id);
+  return {
+    id: projId,
+    name: row.project_name || 'Untitled',
+    type: row.fee_type || 'Survey',
+    hours: row.hours_estimated || 0,
+    focus: projId === String(focusId),
+    crew_name: row.crew_name || null,
+  };
+}
 
 // ── Draggable project card in the holding pen ──
 function DraggableProject({ proj }) {
@@ -55,7 +88,7 @@ function DraggableAssignedChip({ proj, onEditHours }) {
       }}
     >
       <div style={{ fontSize: '0.7rem', fontWeight: '700', color: '#007AFF', marginBottom: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        {proj.id}
+        {proj.name}
         <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <span style={{ color: '#A1A1AA', fontFamily: MONO }}>{proj.hours}h</span>
           <button
@@ -71,7 +104,7 @@ function DraggableAssignedChip({ proj, onEditHours }) {
           </button>
         </span>
       </div>
-      <div style={{ fontSize: '0.85rem', fontWeight: '600', color: '#FFF', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{proj.name}</div>
+      <div style={{ fontSize: '0.75rem', fontWeight: '500', color: '#A1A1AA', fontFamily: MONO, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{proj.id.slice(0, 8)}</div>
     </div>
   );
 }
@@ -81,7 +114,7 @@ function ProjectCardContent({ proj }) {
   return (
     <>
       <div style={{ fontSize: '0.7rem', fontWeight: '700', color: proj.focus ? '#FF9F0A' : '#555', marginBottom: '6px', display: 'flex', justifyContent: 'space-between' }}>
-        {proj.id}
+        {proj.id.slice(0, 8)}
         {proj.focus && <span style={{ color: '#FF9F0A' }}>Incoming Route</span>}
       </div>
       <div style={{ fontSize: '0.9rem', fontWeight: '600', color: '#FFF', marginBottom: '8px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{proj.name}</div>
@@ -130,23 +163,54 @@ export default function DispatchBoard() {
   const { id } = useParams();
 
   const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-  const crews = [
-    { id: 'c1', name: 'Crew Alpha', type: '3-Man Boundary', equipment: 'Trimble S7, R12i' },
-    { id: 'c2', name: 'Crew Bravo', type: '2-Man Topo', equipment: 'Leica RTC360' },
-    { id: 'c3', name: 'Crew Charlie', type: '1-Man Drone', equipment: 'DJI Matrice 300' }
-  ];
 
-  const [unassignedQueue, setUnassignedQueue] = useState([
-    { id: 'PRJ-99281', name: 'Phoenix Sub-Division Alpha', type: 'Boundary', hours: 24, focus: id === 'PRJ-99281' },
-    { id: 'PRJ-44320', name: 'Mesa Commercial Pad', type: 'Topo', hours: 8, focus: false },
-  ]);
-
-  // Each entry: { ...proj, crewId, day }
+  const [loading, setLoading] = useState(true);
+  const [unassignedQueue, setUnassignedQueue] = useState([]);
   const [assignedProjects, setAssignedProjects] = useState([]);
   const [activeId, setActiveId] = useState(null);
 
+  // ── Fetch projects from Supabase on mount ──
+  useEffect(() => {
+    async function fetchProjects() {
+      try {
+        const { data, error } = await supabase.from('projects').select('*').neq('status', 'archived').order('created_at', { ascending: false });
+        if (error) { console.error('[Dispatch] fetch error:', error.message); return; }
+        if (!data) return;
+
+        const unassigned = [];
+        const assigned = [];
+
+        for (const row of data) {
+          const proj = normalizeProject(row, id);
+          if (proj.crew_name) {
+            const crewId = crewIdFromName(proj.crew_name);
+            if (crewId) {
+              assigned.push({ ...proj, crewId, day: row.scheduled_day || 'Monday' });
+            } else {
+              // crew_name doesn't match any known crew — treat as unassigned
+              unassigned.push(proj);
+            }
+          } else {
+            unassigned.push(proj);
+          }
+        }
+
+        setUnassignedQueue(unassigned);
+        setAssignedProjects(assigned);
+      } catch (err) {
+        console.error('[Dispatch] exception:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchProjects();
+  }, [id]);
+
   function handleEditHours(projId, newHours) {
     setAssignedProjects(prev => prev.map(p => p.id === projId ? { ...p, hours: newHours } : p));
+    supabase.from('projects').update({ hours_estimated: newHours }).eq('id', projId).then(({ error }) => {
+      if (error) console.error('[Dispatch] hours update failed:', error.message);
+    });
   }
 
   function handleDragStart(event) {
@@ -155,24 +219,40 @@ export default function DispatchBoard() {
 
   function handleDragEnd(event) {
     setActiveId(null);
-    const { active, over } = event;
+    const { over } = event;
     if (!over) return;
 
-    const rawActiveId = active.id;
+    const rawActiveId = String(event.active.id);
     const isAssigned = rawActiveId.startsWith(ASSIGNED_PREFIX);
     const projectId = isAssigned ? rawActiveId.slice(ASSIGNED_PREFIX.length) : rawActiveId;
-    const targetId = over.id;
+    const targetId = String(over.id);
 
     // ── Scenario 3: Anything -> Holding Pen (unassign) ──
     if (targetId === 'unassigned-zone') {
-      if (isAssigned) {
-        const proj = assignedProjects.find(p => p.id === projectId);
-        if (!proj) return;
-        setAssignedProjects(prev => prev.filter(p => p.id !== projectId));
-        const { crewId: _, day: __, ...clean } = proj;
-        setUnassignedQueue(prev => [...prev, clean]);
-      }
-      // Dragging from holding pen back to holding pen — no-op
+      if (!isAssigned) return; // already in pen, no-op
+
+      const proj = assignedProjects.find(p => p.id === projectId);
+      if (!proj) return;
+
+      // Snapshot for rollback
+      const snapshotAssigned = [...assignedProjects];
+      const snapshotUnassigned = [...unassignedQueue];
+
+      // Optimistic: move immediately
+      const { crewId: _, day: __, ...clean } = proj;
+      setAssignedProjects(prev => prev.filter(p => p.id !== projectId));
+      setUnassignedQueue(prev => [...prev, { ...clean, crew_name: null }]);
+
+      // Persist in background, rollback on failure
+      supabase.from('projects').update({ crew_name: null, scheduled_day: null }).eq('id', projectId)
+        .then(({ error }) => {
+          if (error) {
+            console.error('[Dispatch] unassign failed:', error.message);
+            alert(`Failed to unassign project: ${error.message}`);
+            setAssignedProjects(snapshotAssigned);
+            setUnassignedQueue(snapshotUnassigned);
+          }
+        });
       return;
     }
 
@@ -181,16 +261,47 @@ export default function DispatchBoard() {
     if (separatorIdx === -1) return;
     const crewId = targetId.slice(0, separatorIdx);
     const day = targetId.slice(separatorIdx + 1);
+    const targetCrewName = crewNameFromId(crewId);
+    if (!targetCrewName) return;
 
     if (isAssigned) {
       // ── Scenario 2: Timeline -> Timeline (move) ──
-      setAssignedProjects(prev => prev.map(p => p.id === projectId ? { ...p, crewId, day } : p));
+      const snapshotAssigned = [...assignedProjects];
+
+      setAssignedProjects(prev => prev.map(p =>
+        p.id === projectId ? { ...p, crewId, day, crew_name: targetCrewName } : p
+      ));
+
+      supabase.from('projects').update({ crew_name: targetCrewName, scheduled_day: day }).eq('id', projectId)
+        .then(({ error }) => {
+          if (error) {
+            console.error('[Dispatch] move failed:', error.message);
+            alert(`Failed to move project: ${error.message}`);
+            setAssignedProjects(snapshotAssigned);
+          }
+        });
     } else {
       // ── Scenario 1: Holding Pen -> Timeline (assign) ──
       const proj = unassignedQueue.find(p => p.id === projectId);
       if (!proj) return;
+
+      // Snapshot for rollback
+      const snapshotUnassigned = [...unassignedQueue];
+      const snapshotAssigned = [...assignedProjects];
+
+      // Optimistic: move immediately
       setUnassignedQueue(prev => prev.filter(p => p.id !== projectId));
-      setAssignedProjects(prev => [...prev, { ...proj, crewId, day }]);
+      setAssignedProjects(prev => [...prev, { ...proj, crewId, day, crew_name: targetCrewName }]);
+
+      supabase.from('projects').update({ crew_name: targetCrewName, scheduled_day: day }).eq('id', projectId)
+        .then(({ error }) => {
+          if (error) {
+            console.error('[Dispatch] assign failed:', error.message);
+            alert(`Failed to assign project: ${error.message}`);
+            setUnassignedQueue(snapshotUnassigned);
+            setAssignedProjects(snapshotAssigned);
+          }
+        });
     }
   }
 
@@ -200,6 +311,17 @@ export default function DispatchBoard() {
   const activeProject = isActiveAssigned
     ? assignedProjects.find(p => p.id === activeProjectId)
     : unassignedQueue.find(p => p.id === activeProjectId);
+
+  if (loading) {
+    return (
+      <div style={{ height: '100vh', backgroundColor: '#050505', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFF', fontFamily: FONT }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+          <Activity size={32} color="#FF9F0A" />
+          <span style={{ fontWeight: 600, letterSpacing: '2px', textTransform: 'uppercase', fontSize: '0.8rem', color: '#A1A1AA' }}>Loading Dispatch Matrix...</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>

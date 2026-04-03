@@ -16,6 +16,7 @@ import DispatchBoard from './views/DispatchBoard'
 import FieldLogs from './views/FieldLogs'
 import ProfitAnalytics from './views/ProfitAnalytics'
 import LiveView from './views/LiveView';
+import MobileCrewView from './views/MobileCrewView';
 
 const FIRM_TOLERANCES = { staking: { horizontal: 0.11, vertical: 0.08 }, control_topo: { horizontal: 0.13, vertical: 0.08 } };
 
@@ -364,6 +365,7 @@ export default function App() {
            {/* ROUTED VIEWS — ProjectDrawer links land here */}
           <Route path="/project/:id" element={<LiveView />} />
           <Route path="/dispatch/:id" element={<DispatchBoard />} />
+          <Route path="/crew" element={<MobileCrewView />} />
 
           {/* Catch-all fallback */}
           <Route path="*" element={
