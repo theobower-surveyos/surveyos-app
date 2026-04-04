@@ -241,12 +241,14 @@ export default function App() {
     >{label}</button>
   );
 
+  const isMobileRoute = location.pathname.includes('/crew');
+
   return (
     <ErrorBoundary>
       <div className="app-layout" style={{ display: 'flex', minHeight: '100vh', backgroundColor: 'var(--bg-dark)', color: 'var(--text-main)', fontFamily: 'Inter, sans-serif' }}>
 
-        {/* SIDEBAR NAVIGATION */}
-        <div className="sidebar" style={{ width: '260px', backgroundColor: 'var(--bg-surface)', display: 'flex', flexDirection: 'column', padding: '24px', borderRight: '1px solid var(--border-subtle)', boxSizing: 'border-box' }}>
+        {/* SIDEBAR NAVIGATION — hidden on mobile crew route */}
+        {!isMobileRoute && <div className="sidebar" style={{ width: '260px', backgroundColor: 'var(--bg-surface)', display: 'flex', flexDirection: 'column', padding: '24px', borderRight: '1px solid var(--border-subtle)', boxSizing: 'border-box' }}>
           <h2 style={{ color: 'var(--brand-amber)', margin: '0 0 40px 0', fontSize: '1.4em', letterSpacing: '1px', display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{ width: '28px', height: '28px', backgroundColor: 'var(--brand-teal)', borderRadius: '6px', border: '1px solid var(--brand-amber)' }}></div>
             SURVEYOS
@@ -268,10 +270,10 @@ export default function App() {
             <strong style={{ fontSize: '0.95em', color: 'var(--brand-amber)' }}>{profile?.first_name || 'Guest User'}</strong>
           </div>
           <button onClick={() => supabase.auth.signOut()} style={{ padding: '12px', backgroundColor: 'transparent', color: 'var(--error)', border: '1px solid var(--error)', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>Sign Out System</button>
-        </div>
+        </div>}
 
         {/* MAIN CONTENT AREA — Route Switchboard */}
-        <div className="main-content" style={{ flex: 1, padding: '40px', overflowY: 'auto', boxSizing: 'border-box' }}>
+        <div className="main-content" style={{ flex: 1, padding: isMobileRoute ? 0 : '40px', overflowY: 'auto', boxSizing: 'border-box', width: isMobileRoute ? '100vw' : undefined }}>
           <Routes>
             <Route path="/" element={
               <>

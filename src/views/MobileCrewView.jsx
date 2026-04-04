@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import Papa from 'papaparse';
 import { supabase } from '../supabaseClient';
 import { MapPin, Navigation, CheckCircle, Lock, Clock, AlertCircle, Camera, UploadCloud, FileText } from 'lucide-react';
 
@@ -11,16 +12,17 @@ export default function MobileCrewView() {
   const [arrived, setArrived] = useState(false);
   const [syncingPhoto, setSyncingPhoto] = useState(false);
   const [syncingCsv, setSyncingCsv] = useState(false);
+  
+  // 1. References for the hidden HTML inputs
   const photoInputRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   // Mock Data
-  const activeMission = {
-    id: "PRJ-99281",
-    name: "Phoenix Sub-Division Alpha",
-    type: "Boundary & Topo",
-    address: "4920 E Main St, Mesa, AZ",
-    notes: "Gate code is 4492. Watch for GC machinery near the south retaining wall.",
-    time: "07:00 AM"
+ const activeMission = {
+    id: "7c2f19bc-e445-44c6-a5ca-39e534816b21", // <-- Put your copied UUID here
+    displayId: "PRJ-99281",
+    name: "Phoenix Sub-Division Alpha", // (You can leave this name as is, the ID is what matters to the database)
+    // ...
   };
 
   const upcomingMissions = [
@@ -28,6 +30,7 @@ export default function MobileCrewView() {
     { id: "PRJ-11092", name: "Tempe Commercial Pad", type: "Construction Staking", day: "Friday" }
   ];
 
+  // --- PHOTO PIPELINE ---
   const handlePhotoUpload = async (e) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -51,25 +54,55 @@ export default function MobileCrewView() {
     }
   };
 
-  const handleCsvSync = async () => {
+  // --- CSV PIPELINE ---
+  // 2. The trigger that clicks the invisible file input
+  const triggerFileBrowser = () => {
+    fileInputRef.current.click();
+  };
+
+  // 3. The actual parsing logic that runs after a file is selected
+  const processCsvFile = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
     setSyncingCsv(true);
-    try {
-      const { error } = await supabase.from('math_logs').insert([{
-        project_id: activeMission.id,
-        delta_n: 0.02,
-        delta_e: -0.01,
-        delta_z: 0.0,
-        source: 'field_crew',
-        created_at: new Date().toISOString(),
-      }]);
-      if (error) throw error;
-      alert('CSV telemetry synced to Command Center.');
-    } catch (err) {
-      console.error('[Crew] CSV sync failed:', err.message);
-      alert(`CSV sync failed: ${err.message}`);
-    } finally {
-      setSyncingCsv(false);
-    }
+
+    Papa.parse(file, {
+      header: true,
+      dynamicTyping: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        try {
+          const telemetryPayloads = results.data.map(row => ({
+            project_id: activeMission.id, 
+            point_id: row.point_id,     
+            point_number: String(row.point_number), 
+            delta_n: row.delta_n,
+            delta_e: row.delta_e,
+            delta_z: row.delta_z || 0.0,
+            source: 'mobile_boarding_pass'
+          }));
+
+          console.log("[x20 Debug] Parsed CSV Payload:", telemetryPayloads);
+
+          const { error } = await supabase.from('math_logs').insert(telemetryPayloads);
+          
+          if (error) throw error;
+          
+          alert(`Successfully synced ${telemetryPayloads.length} points to Command Center.`);
+        } catch (err) {
+          console.error("Supabase Error:", err);
+          alert(`Database rejection: ${err.message}`);
+        } finally {
+          setSyncingCsv(false);
+          event.target.value = null; 
+        }
+      },
+      error: (err) => {
+        alert(`Failed to read CSV file: ${err.message}`);
+        setSyncingCsv(false);
+      }
+    });
   };
 
   return (
@@ -113,7 +146,7 @@ export default function MobileCrewView() {
           <div style={{ padding: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <div style={{ padding: '6px 12px', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: '8px', fontSize: '0.75rem', fontWeight: '700', color: '#A1A1AA', fontFamily: MONO }}>
-                {activeMission.id}
+                {activeMission.displayId}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: '700', color: '#FF9F0A' }}>
                 <Clock size={14} /> {activeMission.time}
@@ -171,7 +204,7 @@ export default function MobileCrewView() {
                   Field Telemetry Uplink
                 </div>
                 
-                {/* Hidden native file input for photos */}
+                {/* 4. The Hidden Inputs */}
                 <input
                   type="file"
                   ref={photoInputRef}
@@ -181,8 +214,18 @@ export default function MobileCrewView() {
                   capture="environment"
                   style={{ display: 'none' }}
                 />
+                
+                <input 
+                  type="file" 
+                  accept=".csv" 
+                  ref={fileInputRef} 
+                  style={{ display: 'none' }} 
+                  onChange={processCsvFile} 
+                />
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  
+                  {/* Photo Upload Button */}
                   <button
                     onClick={() => photoInputRef.current.click()}
                     disabled={syncingPhoto}
@@ -196,8 +239,9 @@ export default function MobileCrewView() {
                     <span style={{ fontSize: '0.8rem', fontWeight: '600' }}>{syncingPhoto ? 'Uploading...' : 'Snap Photo'}</span>
                   </button>
 
+                  {/* CSV Sync Button */}
                   <button
-                    onClick={handleCsvSync}
+                    onClick={triggerFileBrowser}
                     disabled={syncingCsv}
                     style={{
                       padding: '16px 8px', backgroundColor: '#141414', border: '1px solid rgba(255,255,255,0.1)',
@@ -208,6 +252,7 @@ export default function MobileCrewView() {
                     {syncingCsv ? <UploadCloud size={24} color="#FF9F0A" style={{ animation: 'pulse 1s infinite' }} /> : <FileText size={24} color="#FF9F0A" />}
                     <span style={{ fontSize: '0.8rem', fontWeight: '600' }}>{syncingCsv ? 'Syncing...' : 'Sync CSV Data'}</span>
                   </button>
+                  
                 </div>
               </div>
             )}
