@@ -669,7 +669,7 @@ function DarkMap({ projects, selectedId, onSelectProject }) {
     >
       {/* Dark tile map background */}
       <img
-        src={`https://api.mapbox.com/styles/v1/mapbox/dark-v11/static/-112.074,33.4484,${zoom},0/1200x700@2x?access_token=REDACTED_USE_ENV`}
+        src={`https://api.mapbox.com/styles/v1/mapbox/dark-v11/static/-112.074,33.4484,${zoom},0/1200x700@2x?access_token=${import.meta.env.VITE_MAPBOX_TOKEN}`}
         alt=""
         style={{
           position: "absolute",
