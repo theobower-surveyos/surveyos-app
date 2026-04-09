@@ -53,3 +53,43 @@ body {
   box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.1); 
   cursor: pointer;
 }
+/* ══════════ RESPONSIVE LAYOUT ENGINE ══════════ */
+.desktop-sidebar {
+  display: flex;
+}
+
+.mobile-bottom-nav {
+  display: none;
+}
+
+.app-main-content {
+  flex: 1;
+  padding: 40px;
+  overflow-y: auto;
+  width: 100%;
+}
+.desktop-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr; /* Map gets 2 fractions, Queue gets 1 */
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 1024px) {
+  .desktop-grid {
+    grid-template-columns: 1fr; /* Stacks vertically on smaller screens */
+  }
+}
+/* When the screen is iPhone/iPad sized (under 768px wide) */
+@media (max-width: 768px) {
+  .desktop-sidebar {
+    display: none !important; /* Force sidebar to vanish */
+  }
+  .mobile-bottom-nav {
+    display: flex !important; /* Force bottom nav to appear */
+  }
+  .app-main-content {
+    padding: 16px !important;
+    padding-bottom: 100px !important; /* Give room so the nav doesn't cover the map */
+  }
+}

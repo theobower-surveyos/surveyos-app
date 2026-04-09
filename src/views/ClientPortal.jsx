@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useNavigate } from "react-router-dom"; // <-- Added Router
 
 // ─── MOCK DATA (Replace with Supabase queries) ────────────────────────────────
 const currentClient = "Pulte Homes";
@@ -88,7 +89,14 @@ const MOCK_PROJECTS = [
   },
 ];
 
-// ─── ICONS (inline SVG to avoid lucide-react import issues in artifact) ───────
+// ─── ICONS ────────────────────────────────────────────────────────────────────
+const LinkIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+  </svg>
+);
+
 const LogOutIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
@@ -123,13 +131,6 @@ const ClockIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FBBF24" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="10" />
     <polyline points="12 6 12 12 16 14" />
-  </svg>
-);
-
-const MapPinIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-    <circle cx="12" cy="10" r="3" />
   </svg>
 );
 
@@ -183,7 +184,6 @@ function PulsingMarker({ project, onClick, isSelected }) {
         transform: "translate(-50%, -50%)",
       }}
     >
-      {/* Outer pulse ring */}
       <div
         style={{
           position: "absolute",
@@ -198,7 +198,6 @@ function PulsingMarker({ project, onClick, isSelected }) {
           animation: "surveyos-pulse 2s ease-in-out infinite",
         }}
       />
-      {/* Inner dot */}
       <div
         style={{
           position: "relative",
@@ -268,8 +267,6 @@ function ClientDrawer({ project, onClose }) {
   return (
     <>
       <Lightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
-
-      {/* Backdrop */}
       <div
         onClick={onClose}
         style={{
@@ -283,8 +280,6 @@ function ClientDrawer({ project, onClose }) {
           opacity: project ? 1 : 0,
         }}
       />
-
-      {/* Drawer Panel */}
       <div
         style={{
           position: "fixed",
@@ -305,283 +300,57 @@ function ClientDrawer({ project, onClose }) {
       >
         {project && (
           <>
-            {/* Drawer Header */}
-            <div
-              style={{
-                padding: "20px 24px",
-                borderBottom: "1px solid rgba(255,255,255,0.06)",
-                display: "flex",
-                alignItems: "flex-start",
-                justifyContent: "space-between",
-                gap: 12,
-              }}
-            >
+            <div style={{ padding: "20px 24px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 500,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.08em",
-                    color: "rgba(255,255,255,0.35)",
-                    marginBottom: 6,
-                    fontFamily: "'SF Mono', 'Fira Code', monospace",
-                  }}
-                >
-                  Project Details
-                </div>
-                <div
-                  style={{
-                    fontSize: 17,
-                    fontWeight: 600,
-                    color: "#fff",
-                    lineHeight: 1.3,
-                    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-                  }}
-                >
-                  {project.project_name}
-                </div>
+                <div style={{ fontSize: 11, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.08em", color: "rgba(255,255,255,0.35)", marginBottom: 6, fontFamily: "'SF Mono', 'Fira Code', monospace" }}>Project Details</div>
+                <div style={{ fontSize: 17, fontWeight: 600, color: "#fff", lineHeight: 1.3, fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>{project.project_name}</div>
               </div>
-              <button
-                onClick={onClose}
-                style={{
-                  background: "rgba(255,255,255,0.06)",
-                  border: "1px solid rgba(255,255,255,0.08)",
-                  borderRadius: 8,
-                  padding: 6,
-                  cursor: "pointer",
-                  color: "rgba(255,255,255,0.5)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  transition: "all 0.2s ease",
-                  flexShrink: 0,
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "rgba(255,255,255,0.1)";
-                  e.currentTarget.style.color = "#fff";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "rgba(255,255,255,0.06)";
-                  e.currentTarget.style.color = "rgba(255,255,255,0.5)";
-                }}
-              >
+              <button onClick={onClose} style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: 6, cursor: "pointer", color: "rgba(255,255,255,0.5)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <XIcon />
               </button>
             </div>
-
-            {/* Drawer Body */}
-            <div
-              style={{
-                flex: 1,
-                overflowY: "auto",
-                padding: 24,
-                display: "flex",
-                flexDirection: "column",
-                gap: 20,
-              }}
-            >
-              {/* Status Card */}
-              <div
-                style={{
-                  background: "rgba(255,255,255,0.03)",
-                  border: "1px solid rgba(255,255,255,0.06)",
-                  borderRadius: 12,
-                  padding: 20,
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 500,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.08em",
-                    color: "rgba(255,255,255,0.35)",
-                    marginBottom: 14,
-                    fontFamily: "'SF Mono', 'Fira Code', monospace",
-                  }}
-                >
-                  Operation Status
-                </div>
-
+            <div style={{ flex: 1, overflowY: "auto", padding: 24, display: "flex", flexDirection: "column", gap: 20 }}>
+              <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12, padding: 20 }}>
+                <div style={{ fontSize: 11, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.08em", color: "rgba(255,255,255,0.35)", marginBottom: 14, fontFamily: "'SF Mono', 'Fira Code', monospace" }}>Operation Status</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                  {/* Status badge */}
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                     <span style={{ fontSize: 13, color: "rgba(255,255,255,0.5)" }}>Field Status</span>
-                    <span
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 600,
-                        color: project.status_color,
-                        background: `${project.status_color}15`,
-                        border: `1px solid ${project.status_color}30`,
-                        padding: "4px 12px",
-                        borderRadius: 20,
-                        fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-                      }}
-                    >
-                      {project.status}
-                    </span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: project.status_color, background: `${project.status_color}15`, border: `1px solid ${project.status_color}30`, padding: "4px 12px", borderRadius: 20, fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>{project.status}</span>
                   </div>
-
-                  {/* Divider */}
                   <div style={{ height: 1, background: "rgba(255,255,255,0.06)" }} />
-
-                  {/* QA badge */}
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                     <span style={{ fontSize: 13, color: "rgba(255,255,255,0.5)" }}>Quality Assurance</span>
-                    <span
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 600,
-                        color: qa.color,
-                        background: qa.bg,
-                        border: `1px solid ${qa.border}`,
-                        padding: "4px 12px",
-                        borderRadius: 20,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                        fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-                      }}
-                    >
-                      {qa.icon}
-                      {qa.label}
+                    <span style={{ fontSize: 12, fontWeight: 600, color: qa.color, background: qa.bg, border: `1px solid ${qa.border}`, padding: "4px 12px", borderRadius: 20, display: "flex", alignItems: "center", gap: 6, fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
+                      {qa.icon}{qa.label}
                     </span>
                   </div>
-
-                  {/* Divider */}
                   <div style={{ height: 1, background: "rgba(255,255,255,0.06)" }} />
-
-                  {/* Address */}
                   <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
                     <span style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", flexShrink: 0 }}>Address</span>
-                    <span
-                      style={{
-                        fontSize: 13,
-                        color: "rgba(255,255,255,0.8)",
-                        textAlign: "right",
-                        lineHeight: 1.4,
-                      }}
-                    >
-                      {project.address}
-                    </span>
+                    <span style={{ fontSize: 13, color: "rgba(255,255,255,0.8)", textAlign: "right", lineHeight: 1.4 }}>{project.address}</span>
                   </div>
-
-                  {/* Divider */}
                   <div style={{ height: 1, background: "rgba(255,255,255,0.06)" }} />
-
-                  {/* Last updated */}
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                     <span style={{ fontSize: 13, color: "rgba(255,255,255,0.5)" }}>Last Activity</span>
-                    <span style={{ fontSize: 13, color: "rgba(255,255,255,0.8)" }}>
-                      {formatDate(project.last_updated)}
-                    </span>
+                    <span style={{ fontSize: 13, color: "rgba(255,255,255,0.8)" }}>{formatDate(project.last_updated)}</span>
                   </div>
                 </div>
               </div>
-
-              {/* Field Photos */}
-              <div
-                style={{
-                  background: "rgba(255,255,255,0.03)",
-                  border: "1px solid rgba(255,255,255,0.06)",
-                  borderRadius: 12,
-                  padding: 20,
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    marginBottom: 14,
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 500,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.08em",
-                      color: "rgba(255,255,255,0.35)",
-                      fontFamily: "'SF Mono', 'Fira Code', monospace",
-                    }}
-                  >
-                    Field Photos
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: "rgba(255,255,255,0.3)",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 4,
-                    }}
-                  >
-                    <ImageIcon />
-                    {project.photos.length}
-                  </div>
+              <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12, padding: 20 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+                  <div style={{ fontSize: 11, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.08em", color: "rgba(255,255,255,0.35)", fontFamily: "'SF Mono', 'Fira Code', monospace" }}>Field Photos</div>
+                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", display: "flex", alignItems: "center", gap: 4 }}><ImageIcon />{project.photos.length}</div>
                 </div>
-
                 {project.photos.length > 0 ? (
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(2, 1fr)",
-                      gap: 8,
-                    }}
-                  >
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
                     {project.photos.map((src, i) => (
-                      <div
-                        key={i}
-                        onClick={() => setLightboxSrc(src)}
-                        style={{
-                          position: "relative",
-                          borderRadius: 8,
-                          overflow: "hidden",
-                          aspectRatio: "4/3",
-                          cursor: "zoom-in",
-                          border: "1px solid rgba(255,255,255,0.06)",
-                          transition: "all 0.3s ease",
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)";
-                          e.currentTarget.style.transform = "scale(1.02)";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)";
-                          e.currentTarget.style.transform = "scale(1)";
-                        }}
-                      >
-                        <img
-                          src={src}
-                          alt={`Field photo ${i + 1}`}
-                          style={{
-                            width: "100%",
-                            height: "100%",
-                            objectFit: "cover",
-                          }}
-                          loading="lazy"
-                        />
+                      <div key={i} onClick={() => setLightboxSrc(src)} style={{ position: "relative", borderRadius: 8, overflow: "hidden", aspectRatio: "4/3", cursor: "zoom-in", border: "1px solid rgba(255,255,255,0.06)" }}>
+                        <img src={src} alt={`Field photo ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover" }} loading="lazy" />
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      padding: "32px 0",
-                      color: "rgba(255,255,255,0.2)",
-                      gap: 8,
-                    }}
-                  >
-                    <CameraIcon />
-                    <span style={{ fontSize: 12 }}>No photos uploaded yet</span>
-                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "32px 0", color: "rgba(255,255,255,0.2)", gap: 8 }}><CameraIcon /><span style={{ fontSize: 12 }}>No photos uploaded yet</span></div>
                 )}
               </div>
             </div>
@@ -595,47 +364,20 @@ function ClientDrawer({ project, onClose }) {
 // ─── STAT PILL ─────────────────────────────────────────────────────────────────
 function StatPill({ label, value, color }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-        padding: "8px 16px",
-        background: "rgba(255,255,255,0.03)",
-        border: "1px solid rgba(255,255,255,0.06)",
-        borderRadius: 10,
-      }}
-    >
-      <div
-        style={{
-          width: 8,
-          height: 8,
-          borderRadius: "50%",
-          background: color,
-          boxShadow: `0 0 8px ${color}66`,
-          flexShrink: 0,
-        }}
-      />
-      <span style={{ fontSize: 22, fontWeight: 700, color: "#fff", fontVariantNumeric: "tabular-nums" }}>
-        {value}
-      </span>
+    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 16px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10 }}>
+      <div style={{ width: 8, height: 8, borderRadius: "50%", background: color, boxShadow: `0 0 8px ${color}66`, flexShrink: 0 }} />
+      <span style={{ fontSize: 22, fontWeight: 700, color: "#fff", fontVariantNumeric: "tabular-nums" }}>{value}</span>
       <span style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", whiteSpace: "nowrap" }}>{label}</span>
     </div>
   );
 }
 
-// ─── SIMPLE MAP (CSS-based, no react-leaflet dep for artifact) ─────────────────
-// NOTE: In production, swap this for your react-leaflet <MapContainer> setup.
-// This renders a dark tile-based map via an <iframe> for artifact portability.
+// ─── SIMPLE MAP ────────────────────────────────────────────────────────────────
 function DarkMap({ projects, selectedId, onSelectProject }) {
   const mapRef = useRef(null);
   const [mapLoaded, setMapLoaded] = useState(false);
-
-  // Phoenix center
   const center = { lat: 33.4484, lng: -112.074 };
   const zoom = 10;
-
-  // Simple lat/lng to pixel projection (Mercator approximation for demo)
   const mapW = 1200;
   const mapH = 700;
 
@@ -646,123 +388,23 @@ function DarkMap({ projects, selectedId, onSelectProject }) {
     const worldY = ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * scale;
     const centerX = ((center.lng + 180) / 360) * scale;
     const centerLatRad = (center.lat * Math.PI) / 180;
-    const centerY =
-      ((1 - Math.log(Math.tan(centerLatRad) + 1 / Math.cos(centerLatRad)) / Math.PI) / 2) * scale;
-
-    return {
-      x: worldX - centerX + mapW / 2,
-      y: worldY - centerY + mapH / 2,
-    };
+    const centerY = ((1 - Math.log(Math.tan(centerLatRad) + 1 / Math.cos(centerLatRad)) / Math.PI) / 2) * scale;
+    return { x: worldX - centerX + mapW / 2, y: worldY - centerY + mapH / 2 };
   }
 
   return (
-    <div
-      ref={mapRef}
-      style={{
-        position: "relative",
-        width: "100%",
-        height: "100%",
-        background: "#0d0d0d",
-        overflow: "hidden",
-        borderRadius: 0,
-      }}
-    >
-      {/* Dark tile map background */}
-      <img
-        src={`https://api.mapbox.com/styles/v1/mapbox/dark-v11/static/-112.074,33.4484,${zoom},0/1200x700@2x?access_token=${import.meta.env.VITE_MAPBOX_TOKEN}`}
-        alt=""
-        style={{
-          position: "absolute",
-          inset: 0,
-          width: "100%",
-          height: "100%",
-          objectFit: "cover",
-          opacity: 0,
-          pointerEvents: "none",
-        }}
-        onLoad={() => setMapLoaded(true)}
-      />
-
-      {/* Fallback: CSS dark grid pattern */}
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          background: `
-            radial-gradient(ellipse at center, rgba(15,110,86,0.06) 0%, transparent 70%),
-            linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px)
-          `,
-          backgroundSize: "100% 100%, 40px 40px, 40px 40px",
-        }}
-      />
-
-      {/* Topographic contour suggestion */}
-      <svg
-        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0.04 }}
-        viewBox={`0 0 ${mapW} ${mapH}`}
-        preserveAspectRatio="none"
-      >
+    <div ref={mapRef} style={{ position: "relative", width: "100%", height: "100%", background: "#0d0d0d", overflow: "hidden", borderRadius: 0 }}>
+      <img src={`https://api.mapbox.com/styles/v1/mapbox/dark-v11/static/-112.074,33.4484,${zoom},0/1200x700@2x?access_token=${import.meta.env.VITE_MAPBOX_TOKEN}`} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", opacity: 0, pointerEvents: "none" }} onLoad={() => setMapLoaded(true)} />
+      <div style={{ position: "absolute", inset: 0, background: `radial-gradient(ellipse at center, rgba(15,110,86,0.06) 0%, transparent 70%), linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px)`, backgroundSize: "100% 100%, 40px 40px, 40px 40px" }} />
+      <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0.04 }} viewBox={`0 0 ${mapW} ${mapH}`} preserveAspectRatio="none">
         <ellipse cx="400" cy="350" rx="300" ry="180" fill="none" stroke="#0F6E56" strokeWidth="1" />
         <ellipse cx="400" cy="350" rx="220" ry="130" fill="none" stroke="#0F6E56" strokeWidth="0.8" />
-        <ellipse cx="400" cy="350" rx="140" ry="80" fill="none" stroke="#0F6E56" strokeWidth="0.6" />
-        <ellipse cx="820" cy="250" rx="200" ry="150" fill="none" stroke="#0F6E56" strokeWidth="0.8" />
-        <ellipse cx="820" cy="250" rx="120" ry="90" fill="none" stroke="#0F6E56" strokeWidth="0.6" />
-        <ellipse cx="200" cy="550" rx="180" ry="100" fill="none" stroke="#0F6E56" strokeWidth="0.7" />
       </svg>
-
-      {/* "PHOENIX METRO" label */}
-      <div
-        style={{
-          position: "absolute",
-          bottom: 16,
-          left: 20,
-          fontSize: 10,
-          fontWeight: 500,
-          letterSpacing: "0.15em",
-          textTransform: "uppercase",
-          color: "rgba(255,255,255,0.15)",
-          fontFamily: "'SF Mono', 'Fira Code', monospace",
-        }}
-      >
-        Phoenix Metropolitan Area · NAD83 AZ Central
-      </div>
-
-      {/* Coordinate overlay */}
-      <div
-        style={{
-          position: "absolute",
-          top: 16,
-          right: 20,
-          fontSize: 10,
-          color: "rgba(255,255,255,0.2)",
-          fontFamily: "'SF Mono', 'Fira Code', monospace",
-          textAlign: "right",
-          lineHeight: 1.6,
-        }}
-      >
-        33.4484°N 112.0740°W
-        <br />
-        Z{zoom} · EPSG:4326
-      </div>
-
-      {/* Project markers */}
       {projects.map((p) => {
         const pos = project(p.lat, p.lng);
         return (
-          <div
-            key={p.id}
-            style={{
-              position: "absolute",
-              left: pos.x,
-              top: pos.y,
-            }}
-          >
-            <PulsingMarker
-              project={p}
-              onClick={onSelectProject}
-              isSelected={selectedId === p.id}
-            />
+          <div key={p.id} style={{ position: "absolute", left: pos.x, top: pos.y }}>
+            <PulsingMarker project={p} onClick={onSelectProject} isSelected={selectedId === p.id} />
           </div>
         );
       })}
@@ -770,61 +412,13 @@ function DarkMap({ projects, selectedId, onSelectProject }) {
   );
 }
 
-// ─── PROJECT LIST ITEM (bottom strip) ──────────────────────────────────────────
+// ─── PROJECT LIST ITEM ─────────────────────────────────────────────────────────
 function ProjectListItem({ project, isSelected, onClick }) {
   return (
-    <button
-      onClick={() => onClick(project)}
-      style={{
-        background: isSelected ? "rgba(15,110,86,0.12)" : "rgba(255,255,255,0.03)",
-        border: `1px solid ${isSelected ? "rgba(15,110,86,0.3)" : "rgba(255,255,255,0.06)"}`,
-        borderRadius: 10,
-        padding: "12px 16px",
-        cursor: "pointer",
-        textAlign: "left",
-        transition: "all 0.25s ease",
-        minWidth: 220,
-        flexShrink: 0,
-      }}
-      onMouseEnter={(e) => {
-        if (!isSelected) {
-          e.currentTarget.style.background = "rgba(255,255,255,0.06)";
-          e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)";
-          e.currentTarget.style.transform = "translateY(-2px)";
-        }
-      }}
-      onMouseLeave={(e) => {
-        if (!isSelected) {
-          e.currentTarget.style.background = "rgba(255,255,255,0.03)";
-          e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)";
-          e.currentTarget.style.transform = "translateY(0)";
-        }
-      }}
-    >
+    <button onClick={() => onClick(project)} style={{ background: isSelected ? "rgba(15,110,86,0.12)" : "rgba(255,255,255,0.03)", border: `1px solid ${isSelected ? "rgba(15,110,86,0.3)" : "rgba(255,255,255,0.06)"}`, borderRadius: 10, padding: "12px 16px", cursor: "pointer", textAlign: "left", transition: "all 0.25s ease", minWidth: 220, flexShrink: 0 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-        <div
-          style={{
-            width: 7,
-            height: 7,
-            borderRadius: "50%",
-            background: project.status_color,
-            boxShadow: `0 0 6px ${project.status_color}66`,
-            flexShrink: 0,
-          }}
-        />
-        <div
-          style={{
-            fontSize: 13,
-            fontWeight: 600,
-            color: "#fff",
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-          }}
-        >
-          {project.project_name}
-        </div>
+        <div style={{ width: 7, height: 7, borderRadius: "50%", background: project.status_color, boxShadow: `0 0 6px ${project.status_color}66`, flexShrink: 0 }} />
+        <div style={{ fontSize: 13, fontWeight: 600, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>{project.project_name}</div>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 6, paddingLeft: 15 }}>
         <span style={{ fontSize: 11, color: project.status_color, fontWeight: 500 }}>{project.status}</span>
@@ -837,9 +431,13 @@ function ProjectListItem({ project, isSelected, onClick }) {
 
 // ─── MAIN CLIENT PORTAL ────────────────────────────────────────────────────────
 export default function ClientPortal() {
+  const navigate = useNavigate();
   const [selectedProject, setSelectedProject] = useState(null);
-  const clientProjects = MOCK_PROJECTS.filter((p) => p.client_name === currentClient);
+  
+  // Detect if you are viewing this via the sidebar, or if a client is viewing via a shared link
+  const isAdminView = window.location.pathname === '/client-portal';
 
+  const clientProjects = MOCK_PROJECTS.filter((p) => p.client_name === currentClient);
   const statusCounts = {
     active: clientProjects.filter((p) => ["Stakes Set", "Field Complete"].includes(p.status)).length,
     pending: clientProjects.filter((p) => p.status === "Pending Stakeout").length,
@@ -847,153 +445,52 @@ export default function ClientPortal() {
     total: clientProjects.length,
   };
 
+  const handleCopyLink = () => {
+    // Generates a mock public share link based on App.jsx architecture
+    const url = `${window.location.origin}/?share=mock_token_123`;
+    navigator.clipboard.writeText(url);
+    alert("Live Portal Link copied to clipboard!");
+  };
+
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "#000",
-        color: "#fff",
-        fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
-      }}
-    >
-      {/* ── Keyframe injection ── */}
+    <div style={{ position: "fixed", inset: 0, background: "#000", color: "#fff", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", display: "flex", flexDirection: "column", overflow: "hidden", zIndex: 100 }}>
       <style>{`
-        @keyframes surveyos-pulse {
-          0%, 100% { transform: translate(-50%,-50%) scale(1); opacity: 0.15; }
-          50% { transform: translate(-50%,-50%) scale(2.2); opacity: 0; }
-        }
-        @keyframes surveyos-fadein {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        @keyframes surveyos-slidein {
-          from { opacity: 0; transform: translateY(6px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        ::-webkit-scrollbar { width: 4px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+        @keyframes surveyos-pulse { 0%, 100% { transform: translate(-50%,-50%) scale(1); opacity: 0.15; } 50% { transform: translate(-50%,-50%) scale(2.2); opacity: 0; } }
+        @keyframes surveyos-fadein { from { opacity: 0; } to { opacity: 1; } }
       `}</style>
 
       {/* ── TOP NAV ── */}
-      <header
-        style={{
-          height: 56,
-          padding: "0 24px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          borderBottom: "1px solid rgba(255,255,255,0.06)",
-          background: "rgba(0,0,0,0.8)",
-          backdropFilter: "blur(20px)",
-          WebkitBackdropFilter: "blur(20px)",
-          flexShrink: 0,
-          zIndex: 50,
-        }}
-      >
+      <header style={{ height: 56, padding: "0 24px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid rgba(255,255,255,0.06)", background: "rgba(0,0,0,0.8)", backdropFilter: "blur(20px)", flexShrink: 0, zIndex: 50 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          {/* Logo mark */}
-          <div
-            style={{
-              width: 28,
-              height: 28,
-              borderRadius: 7,
-              background: "linear-gradient(135deg, #0F6E56, #0F6E56dd)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 13,
-              fontWeight: 800,
-              color: "#fff",
-              letterSpacing: "-0.02em",
-            }}
-          >
-            S
-          </div>
-          <span
-            style={{
-              fontSize: 15,
-              fontWeight: 600,
-              color: "#fff",
-              letterSpacing: "-0.01em",
-            }}
-          >
-            SurveyOS
-          </span>
-          <span
-            style={{
-              fontSize: 10,
-              fontWeight: 500,
-              color: "rgba(255,255,255,0.3)",
-              background: "rgba(255,255,255,0.05)",
-              border: "1px solid rgba(255,255,255,0.08)",
-              padding: "2px 8px",
-              borderRadius: 4,
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
-            }}
-          >
-            Client Portal
-          </span>
+          <div style={{ width: 28, height: 28, borderRadius: 7, background: "linear-gradient(135deg, #0F6E56, #0F6E56dd)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 800, color: "#fff" }}>S</div>
+          <span style={{ fontSize: 15, fontWeight: 600, color: "#fff" }}>SurveyOS</span>
+          <span style={{ fontSize: 10, fontWeight: 500, color: "rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", padding: "2px 8px", borderRadius: 4, textTransform: "uppercase" }}>Client Portal</span>
         </div>
 
-        <button
-          style={{
-            background: "rgba(255,255,255,0.05)",
-            border: "1px solid rgba(255,255,255,0.08)",
-            borderRadius: 8,
-            padding: "6px 14px",
-            cursor: "pointer",
-            color: "rgba(255,255,255,0.6)",
-            fontSize: 13,
-            fontWeight: 500,
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            transition: "all 0.2s ease",
-            fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = "rgba(255,255,255,0.08)";
-            e.currentTarget.style.color = "#fff";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "rgba(255,255,255,0.05)";
-            e.currentTarget.style.color = "rgba(255,255,255,0.6)";
-          }}
-        >
-          <LogOutIcon />
-          Log Out
-        </button>
+        {/* Dynamic Buttons based on who is looking at the screen */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {isAdminView ? (
+            <>
+              <button onClick={handleCopyLink} style={{ background: "rgba(15,110,86,0.15)", border: "1px solid rgba(15,110,86,0.4)", borderRadius: 8, padding: "6px 14px", cursor: "pointer", color: "#34D399", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 6, transition: "all 0.2s" }}>
+                <LinkIcon /> Copy Share Link
+              </button>
+              <button onClick={() => navigate('/')} style={{ background: "#0F6E56", border: "1px solid #148f70", borderRadius: 8, padding: "6px 16px", cursor: "pointer", color: "#fff", fontSize: 13, fontWeight: 600, transition: "all 0.2s" }}>
+                ← Command Center
+              </button>
+            </>
+          ) : (
+            <button onClick={() => window.location.reload()} style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: "6px 14px", cursor: "pointer", color: "rgba(255,255,255,0.6)", fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}>
+              <LogOutIcon /> Log Out
+            </button>
+          )}
+        </div>
       </header>
 
       {/* ── WELCOME BAR + STATS ── */}
-      <div
-        style={{
-          padding: "16px 24px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          borderBottom: "1px solid rgba(255,255,255,0.04)",
-          background: "rgba(0,0,0,0.5)",
-          flexShrink: 0,
-          flexWrap: "wrap",
-          gap: 12,
-        }}
-      >
+      <div style={{ padding: "16px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid rgba(255,255,255,0.04)", background: "rgba(0,0,0,0.5)", flexShrink: 0, flexWrap: "wrap", gap: 12 }}>
         <div>
-          <div style={{ fontSize: 18, fontWeight: 600, color: "#fff", marginBottom: 2 }}>
-            Active Operations for{" "}
-            <span style={{ color: "#0F6E56" }}>{currentClient}</span>
-          </div>
-          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.3)" }}>
-            Real-time field status across the Phoenix Metro area
-          </div>
+          <div style={{ fontSize: 18, fontWeight: 600, color: "#fff", marginBottom: 2 }}>Active Operations for <span style={{ color: "#0F6E56" }}>{currentClient}</span></div>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.3)" }}>Real-time field status across the Phoenix Metro area</div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <StatPill label="Complete" value={statusCounts.active} color="#34D399" />
@@ -1004,38 +501,18 @@ export default function ClientPortal() {
 
       {/* ── MAP AREA ── */}
       <div style={{ flex: 1, position: "relative", minHeight: 0 }}>
-        <DarkMap
-          projects={clientProjects}
-          selectedId={selectedProject?.id}
-          onSelectProject={setSelectedProject}
-        />
+        <DarkMap projects={clientProjects} selectedId={selectedProject?.id} onSelectProject={setSelectedProject} />
       </div>
 
       {/* ── BOTTOM PROJECT STRIP ── */}
-      <div
-        style={{
-          padding: "14px 24px",
-          borderTop: "1px solid rgba(255,255,255,0.06)",
-          background: "rgba(0,0,0,0.85)",
-          backdropFilter: "blur(20px)",
-          WebkitBackdropFilter: "blur(20px)",
-          flexShrink: 0,
-          overflowX: "auto",
-        }}
-      >
+      <div style={{ padding: "14px 24px", borderTop: "1px solid rgba(255,255,255,0.06)", background: "rgba(0,0,0,0.85)", backdropFilter: "blur(20px)", flexShrink: 0, overflowX: "auto" }}>
         <div style={{ display: "flex", gap: 10 }}>
           {clientProjects.map((p) => (
-            <ProjectListItem
-              key={p.id}
-              project={p}
-              isSelected={selectedProject?.id === p.id}
-              onClick={setSelectedProject}
-            />
+            <ProjectListItem key={p.id} project={p} isSelected={selectedProject?.id === p.id} onClick={setSelectedProject} />
           ))}
         </div>
       </div>
 
-      {/* ── DRAWER ── */}
       <ClientDrawer project={selectedProject} onClose={() => setSelectedProject(null)} />
     </div>
   );
