@@ -48,6 +48,9 @@ export default function App() {
   const [selectedProject, setSelectedProject] = useState(null);
   const [surveyPoints, setSurveyPoints] = useState([]);
   const [hasReadBrief, setHasReadBrief] = useState(false);
+  
+  // Mobile Menu State
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [clientProject, setClientProject] = useState(null);
@@ -62,7 +65,6 @@ export default function App() {
     }
   }, []);
 
-  // ══════════ THE SAFETY NET FETCH ══════════
   async function fetchDashboardData(userId) {
     if (!userId) { setLoading(false); return; }
     let profileLoaded = false;
@@ -79,7 +81,6 @@ export default function App() {
     } catch (err) { 
       console.error('[App] error:', err); 
     } finally { 
-      // Force app boot if Supabase profile table is empty or delayed
       if (!profileLoaded) setProfile({ role: 'admin', first_name: 'Founder', firm_id: null });
       setLoading(false); 
     }
@@ -183,12 +184,70 @@ export default function App() {
   const currentNav = location.pathname === '/' ? 'command_center' : location.pathname.replace('/', '').split('/')[0];
   const isMobileRoute = location.pathname.includes('/crew');
 
+  // Desktop Nav Button
   const navBtn = (path, navKey, label, condition = true) => (
     <button onClick={() => { if (!condition) return; if (navKey === 'command_center') setSelectedProject(null); navigate(path); }} style={{ textAlign: 'left', padding: '12px 16px', borderRadius: '8px', border: 'none', backgroundColor: currentNav === navKey ? 'var(--brand-teal)' : 'transparent', color: currentNav === navKey ? '#fff' : 'var(--text-muted)', cursor: 'pointer', fontWeight: '600', opacity: condition ? 1 : 0.4 }}>{label}</button>
   );
 
+  // Mobile Nav Button (Auto-closes Drawer)
+  const mobileNavBtn = (path, navKey, label, condition = true) => (
+    <button onClick={() => { if (!condition) return; if (navKey === 'command_center') setSelectedProject(null); navigate(path); setIsMobileMenuOpen(false); }} style={{ textAlign: 'left', padding: '14px 16px', borderRadius: '8px', border: 'none', backgroundColor: currentNav === navKey ? 'var(--brand-teal)' : 'transparent', color: currentNav === navKey ? '#fff' : 'var(--text-muted)', cursor: 'pointer', fontWeight: '600', opacity: condition ? 1 : 0.4, fontSize: '1.1em' }}>{label}</button>
+  );
+
   return (
     <ErrorBoundary>
+      
+ {/* ══════════ MOBILE DRAWER ENGINE ══════════ */}
+      <style>{`
+        .mobile-hamburger { display: none; position: fixed; top: 24px; right: 24px; z-index: 9998; background: rgba(0,0,0,0.6); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 12px; color: #fff; cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        
+        /* THE FIX: Added overflow-y: auto and increased bottom padding to 60px */
+        .mobile-drawer { position: fixed; top: 0; left: 0; bottom: 0; width: 300px; background: var(--bg-surface); z-index: 9999; transform: translateX(-100%); transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 2px 0 30px rgba(0,0,0,0.6); padding: 30px 24px 60px 24px; display: flex; flex-direction: column; overflow-y: auto; }
+        .mobile-drawer.open { transform: translateX(0); }
+        
+        .mobile-drawer-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); z-index: 9997; opacity: 0; pointer-events: none; transition: opacity 0.3s ease; }
+        .mobile-drawer-overlay.open { opacity: 1; pointer-events: auto; }
+        
+        @media (max-width: 768px) { .mobile-hamburger { display: block; } }
+      `}</style>
+
+      {/* The Dark Overlay */}
+      <div className={`mobile-drawer-overlay ${isMobileMenuOpen ? 'open' : ''}`} onClick={() => setIsMobileMenuOpen(false)}></div>
+
+      {/* The Slide-Out Menu */}
+      <div className={`mobile-drawer ${isMobileMenuOpen ? 'open' : ''}`}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
+          <h2 style={{ color: 'var(--brand-amber)', margin: 0, fontSize: '1.3em', letterSpacing: '1px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ width: '26px', height: '26px', backgroundColor: 'var(--brand-teal)', borderRadius: '6px' }}></div>
+            SURVEYOS
+          </h2>
+          <button onClick={() => setIsMobileMenuOpen(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '1.8em', cursor: 'pointer' }}>×</button>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {mobileNavBtn('/', 'command_center', '📊 Command Center')}
+            {mobileNavBtn('/dispatch', 'dispatch', '🗓️ Dispatch Board')}
+            {mobileNavBtn('/live-view', 'live_view', '📡 Live Field View', !!selectedProject)}
+            {mobileNavBtn('/network-ops', 'network-ops', '🌐 Network Ops')}
+            {mobileNavBtn('/equipment', 'equipment', '🧰 Equipment')}
+            {mobileNavBtn('/roster', 'roster', '👥 Team Roster')}
+            {mobileNavBtn('/client-portal', 'client-portal', '🤝 Client Portal')}
+        </div>
+
+        <div style={{ flex: 1 }}></div>
+        <div style={{ padding: '16px', backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: '12px', marginBottom: '20px', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <span style={{ fontSize: '0.75em', color: 'var(--text-muted)', display: 'block', marginBottom: '6px', letterSpacing: '1px' }}>LOGGED IN AS</span>
+          <strong style={{ fontSize: '1.1em', color: 'var(--brand-amber)' }}>{profile?.first_name || 'Guest'}</strong>
+        </div>
+        <button onClick={() => { setIsMobileMenuOpen(false); supabase.auth.signOut(); }} style={{ padding: '14px', backgroundColor: 'rgba(255, 69, 58, 0.1)', color: '#FF453A', border: '1px solid rgba(255, 69, 58, 0.3)', borderRadius: '12px', cursor: 'pointer', fontWeight: 'bold', fontSize: '1em' }}>Sign Out System</button>
+      </div>
+
+      {/* The Floating Hamburger Button */}
+      <button className="mobile-hamburger" onClick={() => setIsMobileMenuOpen(true)}>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+      </button>
+
+
       {/* ══════════ MASTER LAYOUT (Flex Row by default) ══════════ */}
       <div className="app-layout" style={{ display: 'flex', flexDirection: 'row', height: '100vh', width: '100vw', overflow: 'hidden', backgroundColor: 'var(--bg-dark)', color: 'var(--text-main)', fontFamily: 'Inter, sans-serif' }}>
 
@@ -259,7 +318,7 @@ export default function App() {
           </Routes>
         </div>
 
-       {/* ══════════ MOBILE BOTTOM NAVIGATION ══════════ */}
+        {/* ══════════ MOBILE BOTTOM NAVIGATION ══════════ */}
         <div className="mobile-bottom-nav" style={{ position: 'fixed', bottom: 0, left: 0, right: 0, height: '80px', backgroundColor: 'var(--bg-surface)', borderTop: '1px solid var(--border-subtle)', alignItems: 'center', zIndex: 50 }}>
           <button onClick={() => { setSelectedProject(null); navigate('/'); }} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--brand-amber)', background: 'transparent', border: 'none', cursor: 'pointer' }}>
             <svg style={{ width: '24px', height: '24px', marginBottom: '4px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
