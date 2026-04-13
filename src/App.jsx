@@ -128,19 +128,26 @@ export default function App() {
   // the lifted `projects` state. DispatchBoard (and everything else that
   // reads `projects`) reacts instantly on both devices without refresh.
   //
-  // IMPORTANT: requires the `projects` table to be in the supabase_realtime
-  // publication. If it isn't, this subscription silently does nothing. Run
-  // once in the Supabase SQL editor:
+  // IMPORTANT: two SQL prerequisites must be run ONCE in Supabase:
   //   alter publication supabase_realtime add table public.projects;
+  //   alter table public.projects replica identity full;
+  //
+  // The second one is the classic silent-failure trap: without REPLICA
+  // IDENTITY FULL, Postgres only writes primary-key columns to the WAL
+  // on UPDATE, so the `firm_id=eq.X` filter has nothing to evaluate
+  // against and every event silently gets dropped. Realtime looks like
+  // it's working (channel subscribes, no errors) but no payloads arrive.
   useEffect(() => {
     if (!profile?.firm_id || shareId) return;
-    const channel = supabase.channel('firm-projects-' + profile.firm_id)
+    const channelName = 'firm-projects-' + profile.firm_id;
+    console.log('[Realtime] subscribing', channelName);
+    const channel = supabase.channel(channelName)
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'projects', filter: `firm_id=eq.${profile.firm_id}` },
         (payload) => {
+          console.log('[Realtime] projects event', payload.eventType, payload.new?.id || payload.old?.id);
           setProjects(prev => {
             if (payload.eventType === 'INSERT') {
-              // Skip archived or duplicates (optimistic inserts from this tab)
               if (payload.new.status === 'archived') return prev;
               if (prev.some(p => p.id === payload.new.id)) {
                 return prev.map(p => p.id === payload.new.id ? payload.new : p);
@@ -148,7 +155,6 @@ export default function App() {
               return [payload.new, ...prev];
             }
             if (payload.eventType === 'UPDATE') {
-              // Archived projects disappear from the active list
               if (payload.new.status === 'archived') return prev.filter(p => p.id !== payload.new.id);
               return prev.map(p => p.id === payload.new.id ? payload.new : p);
             }
@@ -158,8 +164,13 @@ export default function App() {
             return prev;
           });
         })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+      .subscribe((status, err) => {
+        console.log('[Realtime] channel status', channelName, status, err || '');
+      });
+    return () => {
+      console.log('[Realtime] unsubscribing', channelName);
+      supabase.removeChannel(channel);
+    };
   }, [profile?.firm_id, shareId]);
 
   async function fetchClientData(shareId) {
