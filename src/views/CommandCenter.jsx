@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
-import ProjectDrawer from '../components/ProjectDrawer';
+import { DispatchProjectDrawer } from './DispatchBoard';
 import DeploymentModal from '../components/DeploymentModal';
 import IntelligenceDrawer from './IntelligenceDrawer';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
@@ -63,7 +63,7 @@ const inputStyle = {
   padding: '12px', borderRadius: '8px', color: '#fff', outline: 'none', boxSizing: 'border-box',
 };
 
-export default function CommandCenter({ profile, projects, teamMembers, onProjectSelect, onCreateProject, onArchiveProject }) {
+export default function CommandCenter({ profile, projects, teamMembers, onProjectSelect, onCreateProject, onArchiveProject, onProjectUpdate }) {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [newProjectName, setNewProjectName] = useState('');
@@ -102,11 +102,41 @@ export default function CommandCenter({ profile, projects, teamMembers, onProjec
 
   const isAdminOrOwner = profile?.role === 'admin' || profile?.role === 'owner' || profile?.role === 'pm';
 
-  const filteredProjects = (projects || []).filter((proj) => {
+  // ─── Queue segmentation ───────────────────────────────────────
+  // 'active'  → pending / in_progress / scheduled (operational)
+  // 'review'  → completed_at set, reviewed_at null (PM approval inbox)
+  // 'done'    → reviewed_at set OR archived (read-only history)
+  const [queueTab, setQueueTab] = useState('active');
+
+  const allMatchSearch = (proj) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
     return (proj?.project_name || '').toLowerCase().includes(q) || (proj?.id || '').toLowerCase().includes(q);
-  });
+  };
+
+  const activeProjects = useMemo(() => (projects || []).filter(p => {
+    if (p.status === 'archived') return false;
+    if (p.status === 'completed') return false;
+    if (p.reviewed_at) return false;
+    return allMatchSearch(p);
+  }), [projects, searchQuery]);
+
+  const reviewProjects = useMemo(() => (projects || []).filter(p => {
+    if (p.status === 'archived') return false;
+    if (!p.completed_at) return false;
+    if (p.reviewed_at) return false;
+    return allMatchSearch(p);
+  }), [projects, searchQuery]);
+
+  const doneProjects = useMemo(() => (projects || []).filter(p => {
+    if (p.reviewed_at || p.status === 'archived') return allMatchSearch(p);
+    return false;
+  }), [projects, searchQuery]);
+
+  const filteredProjects =
+    queueTab === 'review' ? reviewProjects :
+    queueTab === 'done' ? doneProjects :
+    activeProjects;
 
   const [manifest, setManifest] = useState({ 'Total Station': false, 'GNSS Rover': false, 'Base Station': false, 'Data Collector': false, 'Drone / UAV': false });
 
@@ -172,8 +202,53 @@ export default function CommandCenter({ profile, projects, teamMembers, onProjec
 
           {/* PROJECT LIST */}
           <div style={{ backgroundColor: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-subtle)', overflow: 'hidden', display: 'flex', flexDirection: 'column', height: '600px' }}>
-            <div style={{ padding: '16px', borderBottom: '1px solid var(--border-subtle)', backgroundColor: 'rgba(0,0,0,0.2)' }}>
-              <span style={{ fontSize: '0.75em', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Project Queue ({filteredProjects.length})</span>
+            {/* Segmented control — Active / Review / Done */}
+            <div style={{ padding: '12px', borderBottom: '1px solid var(--border-subtle)', backgroundColor: 'rgba(0,0,0,0.2)', display: 'flex', gap: '6px' }}>
+              {[
+                { key: 'active', label: 'Active', count: activeProjects.length, accent: 'var(--brand-teal)' },
+                { key: 'review', label: 'Review', count: reviewProjects.length, accent: 'var(--brand-amber, #D4912A)' },
+                { key: 'done', label: 'Done', count: doneProjects.length, accent: 'var(--text-muted)' },
+              ].map(tab => {
+                const active = queueTab === tab.key;
+                const showBadge = tab.key === 'review' && tab.count > 0;
+                return (
+                  <button
+                    key={tab.key}
+                    onClick={() => setQueueTab(tab.key)}
+                    style={{
+                      flex: 1,
+                      padding: '10px 8px',
+                      borderRadius: '8px',
+                      border: `1px solid ${active ? tab.accent : 'rgba(255,255,255,0.06)'}`,
+                      backgroundColor: active ? (tab.key === 'review' ? 'rgba(212, 145, 42, 0.12)' : 'rgba(13, 79, 79, 0.15)') : 'transparent',
+                      color: active ? '#fff' : 'var(--text-muted)',
+                      fontSize: '0.78em',
+                      fontWeight: '700',
+                      letterSpacing: '0.02em',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    {tab.label}
+                    <span style={{
+                      fontSize: '0.72em',
+                      padding: '2px 7px',
+                      borderRadius: '999px',
+                      backgroundColor: showBadge ? tab.accent : 'rgba(255,255,255,0.08)',
+                      color: showBadge ? '#fff' : 'var(--text-muted)',
+                      fontWeight: '800',
+                      minWidth: '18px',
+                      textAlign: 'center',
+                    }}>
+                      {tab.count}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
             <div style={{ flex: 1, overflowY: 'auto' }}>
               {filteredProjects.map((proj) => {
@@ -195,7 +270,31 @@ export default function CommandCenter({ profile, projects, teamMembers, onProjec
         </div>
       </>}
 
-      <ProjectDrawer project={drawerProject} isOpen={!!drawerProject} onClose={() => setDrawerProject(null)} />
+      <DispatchProjectDrawer
+        project={drawerProject}
+        crewLookup={teamMembers || []}
+        allProjects={projects || []}
+        displayCrews={(teamMembers || []).filter(m => ['field_crew','technician','party_chief'].includes((m.role || '').toLowerCase()))}
+        supabase={supabase}
+        profile={profile}
+        canEdit={isAdminOrOwner}
+        isMobile={false}
+        onProjectUpdate={(id, patch) => {
+          setDrawerProject(prev => prev && prev.id === id ? { ...prev, ...patch } : prev);
+          onProjectUpdate && onProjectUpdate(id, patch);
+          // Also fire the actual DB write — CommandCenter doesn't have a
+          // persist helper like DispatchBoard, so we do the write inline.
+          if (supabase) {
+            supabase.from('projects').update(patch).eq('id', id).then(({ error }) => {
+              if (error) {
+                console.error('[CommandCenter] patch failed', { id, patch, error });
+                alert(`Save failed: ${error.message || 'unknown error'}`);
+              }
+            });
+          }
+        }}
+        onClose={() => setDrawerProject(null)}
+      />
       <IntelligenceDrawer isOpen={isIntelOpen} onClose={() => { setIsIntelOpen(false); setSelectedProjectId(null); }} projectId={selectedProjectId} />
       <DeploymentModal isOpen={isDeploying} onClose={() => setIsDeploying(false)} teamMembers={teamMembers} onDispatch={async (data) => { const newProject = await onCreateProject(data); if (newProject?.id) showToast('Dispatch initialized — project added to Holding Queue'); else showToast('Dispatch failed — please retry'); setIsDeploying(false); }} />
 

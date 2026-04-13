@@ -1,5 +1,6 @@
-import { useMemo } from 'react';
-import { Sun, Users, ArrowRight, MapPin, Calendar, Inbox } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Sun, Users, ArrowRight, MapPin, Calendar, Inbox, ClipboardCheck, ChevronRight } from 'lucide-react';
+import { DispatchProjectDrawer } from './DispatchBoard';
 
 // ─── Design tokens (mirror DispatchBoard) ────────────────────────────
 const FONT = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif";
@@ -46,7 +47,10 @@ const getCrewId = (project) => {
 // PTO. Shows holding queue count with a deploy action. Primary CTA
 // routes straight to the dispatch board — not the command center.
 // ═══════════════════════════════════════════════════════════════════
-export default function MorningBrief({ profile, projects = [], teamMembers = [], onProceed, onGoToDispatch }) {
+export default function MorningBrief({ profile, projects = [], teamMembers = [], supabase, onProjectUpdate, onProceed, onGoToDispatch }) {
+  // Local drawer state — tapping a Ready-for-Review card opens the drawer
+  // inline so the PM can approve without leaving the Morning Brief.
+  const [reviewDrawerProject, setReviewDrawerProject] = useState(null);
   const today = useMemo(() => new Date(), []);
   const todayISO = toISODate(today);
 
@@ -86,6 +90,31 @@ export default function MorningBrief({ profile, projects = [], teamMembers = [],
     activeProjects.filter(p => !getCrewId(p) || !p.scheduled_date),
     [activeProjects]
   );
+
+  // Ready for Review — projects completed within the last 48h that have
+  // not been reviewed yet by the PM. Rolls a 2-day window so a PM who
+  // misses a morning still sees yesterday's work at the next login.
+  const reviewQueue = useMemo(() => {
+    const cutoffMs = Date.now() - 48 * 60 * 60 * 1000;
+    return (projects || []).filter(p => {
+      if (p.status === 'archived') return false;
+      if (!p.completed_at) return false;
+      if (p.reviewed_at) return false;
+      const ct = new Date(p.completed_at).getTime();
+      return ct >= cutoffMs;
+    }).sort((a, b) =>
+      new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime()
+    );
+  }, [projects]);
+
+  // Map crew uuid → name for rendering on review cards.
+  const crewNameById = useMemo(() => {
+    const map = new Map();
+    for (const m of teamMembers || []) {
+      map.set(m.id, `${m.first_name || ''} ${m.last_name || ''}`.trim());
+    }
+    return map;
+  }, [teamMembers]);
 
   // Build a per-crew deployment map for today.
   const deploymentsByCrew = useMemo(() => {
@@ -201,6 +230,135 @@ export default function MorningBrief({ profile, projects = [], teamMembers = [],
           </div>
         </section>
 
+        {/* ─── READY FOR REVIEW (PM approval inbox from the last 48h) ─── */}
+        {reviewQueue.length > 0 && (
+          <section style={{ marginBottom: '28px', animation: 'fadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.12s both' }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              marginBottom: '14px',
+              fontSize: '0.68rem',
+              fontWeight: '700',
+              letterSpacing: '1.5px',
+              textTransform: 'uppercase',
+              color: 'var(--text-muted)',
+            }}>
+              <ClipboardCheck size={14} /> Ready for Review
+            </div>
+            <div style={{
+              backgroundColor: SURFACE.panel,
+              border: `1px solid ${HAIRLINE}`,
+              borderRadius: '14px',
+              overflow: 'hidden',
+            }}>
+              {reviewQueue.map((p, i) => {
+                const lead = crewNameById.get(getCrewId(p)) || 'Crew';
+                // Rounded hours for display (matches end-of-day card convention)
+                let hours = null;
+                if (p.started_at && p.completed_at) {
+                  const ms = new Date(p.completed_at).getTime() - new Date(p.started_at).getTime();
+                  if (ms > 0) hours = Math.max(0.25, Math.round((ms / 3600000) * 2) / 2);
+                }
+                // Count photos + notes as evidence indicators (photos count
+                // is not available client-side without a fetch, so just show
+                // "Notes" if present and let the drawer load photos).
+                const hasNotes = !!(p.notes && p.notes.trim());
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => setReviewDrawerProject(p)}
+                    style={{
+                      width: '100%',
+                      padding: '16px 20px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '14px',
+                      background: 'transparent',
+                      border: 'none',
+                      borderBottom: i === reviewQueue.length - 1 ? 'none' : `1px solid ${HAIRLINE}`,
+                      color: 'var(--text-main)',
+                      fontFamily: FONT,
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'background-color 150ms ease',
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.02)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                  >
+                    {/* Green completion badge */}
+                    <div style={{
+                      width: '42px',
+                      height: '42px',
+                      flexShrink: 0,
+                      borderRadius: '50%',
+                      backgroundColor: 'rgba(52, 199, 89, 0.14)',
+                      border: `1.5px solid var(--success)`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: 'var(--success)',
+                      fontWeight: '800',
+                      fontSize: '1.1rem',
+                    }}>
+                      ✓
+                    </div>
+
+                    {/* Name + meta */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontSize: '1rem',
+                        fontWeight: '700',
+                        color: 'var(--text-main)',
+                        letterSpacing: '-0.01em',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}>
+                        {p.project_name}
+                      </div>
+                      <div style={{
+                        fontSize: '0.78rem',
+                        color: 'var(--text-muted)',
+                        marginTop: '3px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        flexWrap: 'wrap',
+                      }}>
+                        <span>{lead}</span>
+                        {hours !== null && (
+                          <>
+                            <span style={{ opacity: 0.5 }}>·</span>
+                            <span>{hours} hrs</span>
+                          </>
+                        )}
+                        {hasNotes && (
+                          <>
+                            <span style={{ opacity: 0.5 }}>·</span>
+                            <span>Field notes</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    <ChevronRight size={18} color="var(--text-muted)" />
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{
+              fontSize: '0.78rem',
+              color: 'var(--text-muted)',
+              marginTop: '10px',
+              textAlign: 'center',
+              letterSpacing: '-0.01em',
+            }}>
+              {reviewQueue.length} job{reviewQueue.length !== 1 ? 's' : ''} awaiting approval
+            </div>
+          </section>
+        )}
+
         {/* ─── HOLDING QUEUE CALLOUT (only if non-empty) ─── */}
         {holdingQueue.length > 0 && (
           <section style={{
@@ -292,6 +450,32 @@ export default function MorningBrief({ profile, projects = [], teamMembers = [],
           </button>
         </div>
       </div>
+
+      {/* Inline review drawer — opened from the Ready for Review cards.
+          Auto-enters review mode because the project has completed_at set. */}
+      <DispatchProjectDrawer
+        project={reviewDrawerProject}
+        crewLookup={teamMembers || []}
+        allProjects={projects || []}
+        displayCrews={(teamMembers || []).filter(m => ['field_crew','technician','party_chief'].includes((m.role || '').toLowerCase().trim()))}
+        supabase={supabase}
+        profile={profile}
+        canEdit={true}
+        isMobile={false}
+        onProjectUpdate={(id, patch) => {
+          setReviewDrawerProject(prev => prev && prev.id === id ? { ...prev, ...patch } : prev);
+          onProjectUpdate && onProjectUpdate(id, patch);
+          if (supabase) {
+            supabase.from('projects').update(patch).eq('id', id).then(({ error }) => {
+              if (error) {
+                console.error('[MorningBrief] patch failed', { id, patch, error });
+                alert(`Save failed: ${error.message || 'unknown error'}`);
+              }
+            });
+          }
+        }}
+        onClose={() => setReviewDrawerProject(null)}
+      />
     </div>
   );
 }

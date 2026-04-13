@@ -327,7 +327,23 @@ export default function DispatchBoard({ supabase, profile, projects = [], teamMe
     setViewMode(v => (v === 'week' ? 'month' : 'week'));
   }
 
-  const activeProjects = localProjects.filter(p => p.status !== 'completed' && p.status !== 'archived');
+  // Active set: anything not archived, plus completed-today-not-reviewed
+  // so the crew's work lingers on today's dispatch board as a muted card
+  // until the PM taps Approve in the review drawer.
+  const activeProjects = useMemo(() => {
+    const now = new Date();
+    const todayY = now.getFullYear(), todayM = now.getMonth(), todayD = now.getDate();
+    return localProjects.filter(p => {
+      if (p.status === 'archived') return false;
+      if (p.status === 'completed') {
+        if (p.reviewed_at) return false;
+        if (!p.completed_at) return false;
+        const ct = new Date(p.completed_at);
+        return ct.getFullYear() === todayY && ct.getMonth() === todayM && ct.getDate() === todayD;
+      }
+      return true;
+    });
+  }, [localProjects]);
 
   // Holding queue: anything not assigned to BOTH a crew AND a date
   const holdingQueue = activeProjects.filter(p => !getCrewId(p) || !p.scheduled_date);
@@ -779,6 +795,7 @@ export default function DispatchBoard({ supabase, profile, projects = [], teamMe
                                   // In month mode, only render the first working-day instance of a span
                                   // with a "× N days" caption to avoid repeating the card 5+ times.
                                   if (isMonth && span && span.total > 1 && span.index > 1) return null;
+                                  const isMuted = p.status === 'completed' && !p.reviewed_at;
                                   return (
                                     <DraggableProjectCard
                                       key={p.id}
@@ -792,6 +809,7 @@ export default function DispatchBoard({ supabase, profile, projects = [], teamMe
                                       teamLookup={teamMembers}
                                       spanInfo={span}
                                       isMonthView={isMonth}
+                                      muted={isMuted}
                                     />
                                   );
                                 })}
@@ -866,7 +884,20 @@ export default function DispatchBoard({ supabase, profile, projects = [], teamMe
 }
 
 // ══════════ DISPATCH PROJECT DRAWER ══════════
-function DispatchProjectDrawer({ project, crewLookup, equipmentList = [], equipmentOccupancy = null, allProjects = [], supabase, profile = null, canEdit = false, isMobile = false, displayCrews = [], onProjectUpdate, onClose }) {
+export function DispatchProjectDrawer({ project, crewLookup, equipmentList = [], equipmentOccupancy = null, allProjects = [], supabase, profile = null, canEdit = false, isMobile = false, displayCrews = [], onProjectUpdate, onClose }) {
+  // ─── Drawer mode — drives section ordering, primary action, and affordances.
+  // Auto-computed from project status unless explicitly passed by the caller.
+  //   'active'  → in-progress / scheduled / pending — full editable tooling
+  //   'review'  → completed_at set, reviewed_at null — PM approval surface
+  //   'archive' → reviewed_at set — read-only history
+  const drawerMode = (() => {
+    if (!project) return 'active';
+    if (project.reviewed_at) return 'archive';
+    if (project.completed_at) return 'review';
+    return 'active';
+  })();
+  const isReviewMode = drawerMode === 'review';
+  const isArchiveMode = drawerMode === 'archive';
   const [invoiceState, setInvoiceState] = React.useState('idle'); // idle | sending | sent | error
   const isOpen = !!project;
 
@@ -1121,6 +1152,16 @@ function DispatchProjectDrawer({ project, crewLookup, equipmentList = [], equipm
     }
   }
 
+  // Review-mode primary action: mark the project as reviewed by stamping
+  // reviewed_at. The project drops out of the Ready-for-Review queue and
+  // the Dispatch Board's lingering-completed-card. Decoupled from Invoice
+  // so PMs can't accidentally bill a client with one tap.
+  const handleApprove = () => {
+    if (!project || !onProjectUpdate) return;
+    onProjectUpdate(project.id, { reviewed_at: new Date().toISOString() });
+    onClose && onClose();
+  };
+
   return (
     <>
       {/* Backdrop */}
@@ -1252,6 +1293,187 @@ function DispatchProjectDrawer({ project, crewLookup, equipmentList = [], equipm
 
         {/* Body */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+
+          {/* REVIEW MODE HERO — renders first, gives the PM everything they
+              need to decide in 10 seconds: photos, duration, notes, tasks.
+              Editing sections hide below. */}
+          {(isReviewMode || isArchiveMode) && canEdit && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              {/* Photos as hero — larger thumbs, visible first */}
+              {photos.length > 0 && (
+                <div>
+                  <div style={{
+                    fontSize: '0.66rem',
+                    fontWeight: '700',
+                    letterSpacing: '1.5px',
+                    textTransform: 'uppercase',
+                    color: 'var(--text-muted)',
+                    marginBottom: '10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                  }}>
+                    <Camera size={14} /> Photos · {photos.length}
+                  </div>
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(3, 1fr)',
+                    gap: '8px',
+                  }}>
+                    {photos.slice(0, 9).map(p => (
+                      <a
+                        key={p.name}
+                        href={p.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          aspectRatio: '1',
+                          overflow: 'hidden',
+                          borderRadius: '10px',
+                          border: `1px solid ${HAIRLINE}`,
+                          display: 'block',
+                        }}
+                      >
+                        <img src={p.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                      </a>
+                    ))}
+                  </div>
+                  {photos.length > 9 && (
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '6px', fontStyle: 'italic' }}>
+                      +{photos.length - 9} more below
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Field Log — one line, compact: crew · times · duration */}
+              {(project?.started_at || project?.completed_at) && (() => {
+                const start = project.started_at ? new Date(project.started_at) : null;
+                const end = project.completed_at ? new Date(project.completed_at) : null;
+                const lead = crewLookup.find(m => m.id === getCrewId(project));
+                const leadName = lead ? `${lead.first_name || ''} ${lead.last_name || ''}`.trim() : 'Crew';
+                let duration = '';
+                if (start && end) {
+                  const mins = Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000));
+                  const h = Math.floor(mins / 60);
+                  const m = mins % 60;
+                  duration = h > 0 ? `${h}h ${m}m` : `${m}m`;
+                }
+                const fmtTime = (d) => d ? d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '—';
+                return (
+                  <div style={{
+                    padding: '14px 16px',
+                    borderRadius: '10px',
+                    backgroundColor: SURFACE.card,
+                    border: `1px solid ${HAIRLINE}`,
+                  }}>
+                    <div style={{
+                      fontSize: '0.66rem',
+                      fontWeight: '700',
+                      letterSpacing: '1.5px',
+                      textTransform: 'uppercase',
+                      color: 'var(--text-muted)',
+                      marginBottom: '8px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                    }}>
+                      <Clock size={14} /> Field Log
+                    </div>
+                    <div style={{
+                      fontSize: '0.92rem',
+                      fontWeight: '600',
+                      color: 'var(--text-main)',
+                      letterSpacing: '-0.01em',
+                    }}>
+                      {leadName} · {fmtTime(start)} → {fmtTime(end)}
+                    </div>
+                    {duration && (
+                      <div style={{ fontSize: '0.82rem', color: ACCENT.action, fontWeight: '700', marginTop: '4px', fontFamily: "'JetBrains Mono', 'SF Mono', monospace" }}>
+                        {duration} on site
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Notes — rendered large for easy reading, read-only in review */}
+              {project?.notes && (
+                <div>
+                  <div style={{
+                    fontSize: '0.66rem',
+                    fontWeight: '700',
+                    letterSpacing: '1.5px',
+                    textTransform: 'uppercase',
+                    color: 'var(--text-muted)',
+                    marginBottom: '10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                  }}>
+                    <FileText size={14} /> Field Notes
+                  </div>
+                  <div style={{
+                    padding: '16px 18px',
+                    borderRadius: '10px',
+                    backgroundColor: SURFACE.card,
+                    border: `1px solid ${HAIRLINE}`,
+                    fontSize: '0.92rem',
+                    lineHeight: '1.6',
+                    color: 'var(--text-main)',
+                    whiteSpace: 'pre-wrap',
+                    letterSpacing: '-0.005em',
+                  }}>
+                    {project.notes}
+                  </div>
+                </div>
+              )}
+
+              {/* Tasks completed — scope items rendered as a green-checked list */}
+              {scopeItems.length > 0 && (
+                <div>
+                  <div style={{
+                    fontSize: '0.66rem',
+                    fontWeight: '700',
+                    letterSpacing: '1.5px',
+                    textTransform: 'uppercase',
+                    color: 'var(--text-muted)',
+                    marginBottom: '10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                  }}>
+                    <CheckCircle2 size={14} /> Tasks Completed
+                  </div>
+                  <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {scopeItems.map((item, i) => {
+                      const label = typeof item === 'string' ? item : (item.label || item.name || 'Task');
+                      return (
+                        <li key={i} style={{
+                          padding: '10px 14px',
+                          borderRadius: '8px',
+                          backgroundColor: SURFACE.card,
+                          border: `1px solid ${HAIRLINE}`,
+                          fontSize: '0.88rem',
+                          color: 'var(--text-main)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                        }}>
+                          <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--success)', flexShrink: 0 }} />
+                          {label}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Active-mode sections — the full editable drawer. Hidden in review
+              and archive modes where the hero above provides the focused surface. */}
+          {!isReviewMode && !isArchiveMode && (<>
 
           {/* Field Actions — top of drawer for field crews assigned to this project */}
           {canDoFieldWork && (
@@ -2064,10 +2286,116 @@ function DispatchProjectDrawer({ project, crewLookup, equipmentList = [], equipm
               </div>
             </DrawerSection>
           )}
+
+          </>)}
         </div>
 
-        {/* Footer — Tier 1 (sits WITH the drawer body, not below it) */}
-        {canEdit ? (
+        {/* Footer — context-driven by drawerMode.
+            Active: Generate Invoice (existing)
+            Review: Approve primary + Generate Invoice secondary
+            Archive: muted "Reviewed" chip + Generate Report
+        */}
+        {canEdit && isReviewMode ? (
+          <div style={{ padding: '20px 28px', borderTop: `1px solid ${EDGE}`, backgroundColor: SURFACE.panel, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <button
+              onClick={handleApprove}
+              style={{
+                width: '100%',
+                padding: '16px 18px',
+                borderRadius: '12px',
+                border: 'none',
+                backgroundColor: 'var(--success)',
+                color: 'var(--text-main)',
+                fontWeight: '700',
+                fontSize: '1rem',
+                letterSpacing: '-0.01em',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '10px',
+                fontFamily: FONT,
+                minHeight: '52px',
+              }}
+            >
+              <CheckCircle2 size={20} />
+              Approve
+            </button>
+            <button
+              onClick={handleGenerateInvoice}
+              disabled={!project || invoiceState === 'sending'}
+              style={{
+                width: '100%',
+                padding: '12px 18px',
+                borderRadius: '10px',
+                border: `1px solid ${HAIRLINE}`,
+                backgroundColor: 'transparent',
+                color: invoiceState === 'sent' ? 'var(--success)' : 'var(--text-main)',
+                fontWeight: '600',
+                fontSize: '0.88rem',
+                letterSpacing: '-0.01em',
+                cursor: invoiceState === 'sending' ? 'wait' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '10px',
+                opacity: invoiceState === 'sending' ? 0.7 : 1,
+                fontFamily: FONT,
+              }}
+            >
+              <Receipt size={16} />
+              {invoiceState === 'idle' && 'Generate Invoice'}
+              {invoiceState === 'sending' && 'Generating…'}
+              {invoiceState === 'sent' && 'Invoice Sent'}
+              {invoiceState === 'error' && 'Retry Invoice'}
+            </button>
+          </div>
+        ) : canEdit && isArchiveMode ? (
+          <div style={{ padding: '20px 28px', borderTop: `1px solid ${EDGE}`, backgroundColor: SURFACE.panel, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <div style={{
+              padding: '10px 14px',
+              borderRadius: '8px',
+              backgroundColor: 'rgba(52, 199, 89, 0.1)',
+              border: `1px solid rgba(52, 199, 89, 0.3)`,
+              color: 'var(--success)',
+              fontSize: '0.78rem',
+              fontWeight: '700',
+              textAlign: 'center',
+              letterSpacing: '0.02em',
+              textTransform: 'uppercase',
+            }}>
+              ✓ Reviewed {project?.reviewed_at ? `· ${new Date(project.reviewed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''}
+            </div>
+            <button
+              onClick={handleGenerateInvoice}
+              disabled={!project || invoiceState === 'sending'}
+              style={{
+                width: '100%',
+                padding: '12px 18px',
+                borderRadius: '10px',
+                border: `1px solid ${HAIRLINE}`,
+                backgroundColor: 'transparent',
+                color: invoiceState === 'sent' ? 'var(--success)' : 'var(--text-main)',
+                fontWeight: '600',
+                fontSize: '0.88rem',
+                letterSpacing: '-0.01em',
+                cursor: invoiceState === 'sending' ? 'wait' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '10px',
+                opacity: invoiceState === 'sending' ? 0.7 : 1,
+                fontFamily: FONT,
+              }}
+            >
+              <Receipt size={16} />
+              {invoiceState === 'idle' && 'Generate Invoice'}
+              {invoiceState === 'sending' && 'Generating…'}
+              {invoiceState === 'sent' && 'Invoice Sent'}
+              {invoiceState === 'error' && 'Retry Invoice'}
+            </button>
+          </div>
+        ) : canEdit ? (
         <div style={{ padding: '20px 28px', borderTop: `1px solid ${EDGE}`, backgroundColor: SURFACE.panel }}>
           <button
             onClick={handleGenerateInvoice}
@@ -2555,7 +2883,7 @@ function DayCell({ crewId, day, isToday, ptoRow = null, wouldConflict = false, m
 }
 
 // ══════════ DRAGGABLE PROJECT CARD ══════════
-function DraggableProjectCard({ project, compact = false, dense = false, canEdit = false, ptoConflict = false, equipmentConflict = false, teamLookup = [], spanInfo = null, isMonthView = false, onOpen }) {
+function DraggableProjectCard({ project, compact = false, dense = false, canEdit = false, ptoConflict = false, equipmentConflict = false, teamLookup = [], spanInfo = null, isMonthView = false, muted = false, onOpen }) {
   // Read-only viewers (field crews, technicians, etc.) get a static card
   // that still opens the drawer but cannot be dragged.
   if (!canEdit) {
@@ -2564,16 +2892,16 @@ function DraggableProjectCard({ project, compact = false, dense = false, canEdit
         onClick={() => onOpen && onOpen(project)}
         style={{ cursor: 'pointer', minWidth: 0 }}
       >
-        <ProjectCardVisual project={project} compact={compact} dense={dense} ptoConflict={ptoConflict} equipmentConflict={equipmentConflict} teamLookup={teamLookup} spanInfo={spanInfo} isMonthView={isMonthView} />
+        <ProjectCardVisual project={project} compact={compact} dense={dense} ptoConflict={ptoConflict} equipmentConflict={equipmentConflict} teamLookup={teamLookup} spanInfo={spanInfo} isMonthView={isMonthView} muted={muted} />
       </div>
     );
   }
 
   // Editor (admin / owner / pm) — full drag-and-drop card
-  return <EditableProjectCard project={project} compact={compact} dense={dense} ptoConflict={ptoConflict} equipmentConflict={equipmentConflict} teamLookup={teamLookup} spanInfo={spanInfo} isMonthView={isMonthView} onOpen={onOpen} />;
+  return <EditableProjectCard project={project} compact={compact} dense={dense} ptoConflict={ptoConflict} equipmentConflict={equipmentConflict} teamLookup={teamLookup} spanInfo={spanInfo} isMonthView={isMonthView} muted={muted} onOpen={onOpen} />;
 }
 
-function EditableProjectCard({ project, compact, dense, ptoConflict, equipmentConflict, teamLookup, spanInfo, isMonthView, onOpen }) {
+function EditableProjectCard({ project, compact, dense, ptoConflict, equipmentConflict, teamLookup, spanInfo, isMonthView, muted, onOpen }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: project.id,
     data: { type: 'project', project },
@@ -2597,7 +2925,7 @@ function EditableProjectCard({ project, compact, dense, ptoConflict, equipmentCo
         minWidth: 0,
       }}
     >
-      <ProjectCardVisual project={project} compact={compact} dense={dense} ptoConflict={ptoConflict} equipmentConflict={equipmentConflict} teamLookup={teamLookup} spanInfo={spanInfo} isMonthView={isMonthView} />
+      <ProjectCardVisual project={project} compact={compact} dense={dense} ptoConflict={ptoConflict} equipmentConflict={equipmentConflict} teamLookup={teamLookup} spanInfo={spanInfo} isMonthView={isMonthView} muted={muted} />
     </div>
   );
 }
@@ -2689,7 +3017,7 @@ function CrewAvatarStack({ crewIds = [], leadId, teamLookup = [], size = 16 }) {
 // `dense`       = month-mode day cell — even tighter, hide the location row.
 // `ptoConflict` = project is scheduled on a day the assigned crew is now on PTO.
 //                 Soft warning: amber badge, no auto-unschedule.
-function ProjectCardVisual({ project, compact = false, dense = false, dragging = false, ptoConflict = false, equipmentConflict = false, teamLookup = [], spanInfo = null, isMonthView = false }) {
+function ProjectCardVisual({ project, compact = false, dense = false, dragging = false, ptoConflict = false, equipmentConflict = false, teamLookup = [], spanInfo = null, isMonthView = false, muted = false }) {
   // Location renders unless we're in dense (month-mode) day cells.
   const showLocation = project.location && !dense;
   const showCrewStack = Array.isArray(project.assigned_crew) && project.assigned_crew.length > 0;
@@ -2711,7 +3039,7 @@ function ProjectCardVisual({ project, compact = false, dense = false, dragging =
     <div style={{
       position: 'relative',
       backgroundColor: dragging ? SURFACE.lifted : SURFACE.card,
-      border: `1px solid ${borderColor}`,
+      border: `1px solid ${muted ? 'rgba(52, 199, 89, 0.3)' : borderColor}`,
       borderRadius: '10px',
       padding: compact ? '10px 12px' : '14px',
       // No resting shadow — cards sit IN the grid, not ON it.
@@ -2720,7 +3048,34 @@ function ProjectCardVisual({ project, compact = false, dense = false, dragging =
         ? '0 16px 32px -8px rgba(0,0,0,0.5)'
         : 'none',
       transform: dragging ? 'rotate(-1deg)' : 'none',
+      opacity: muted ? 0.5 : 1,
+      transition: 'opacity 180ms ease',
     }}>
+      {muted && (
+        <div
+          title="Completed — awaiting PM review"
+          style={{
+            position: 'absolute',
+            top: '-6px',
+            right: '-6px',
+            width: '18px',
+            height: '18px',
+            borderRadius: '50%',
+            backgroundColor: 'var(--success)',
+            color: '#fff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontWeight: '800',
+            fontSize: '0.72rem',
+            lineHeight: 1,
+            border: `2px solid ${SURFACE.panel}`,
+            zIndex: 2,
+          }}
+        >
+          ✓
+        </div>
+      )}
       {equipmentConflict && (
         <div
           title="Equipment conflict — this project shares equipment with another on the same day"

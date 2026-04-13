@@ -265,6 +265,8 @@ export default function App() {
         profile={profile}
         projects={projects}
         teamMembers={teamMembers}
+        supabase={supabase}
+        onProjectUpdate={handleProjectUpdate}
         onProceed={() => setHasReadBrief(true)}
         onGoToDispatch={() => { setHasReadBrief(true); navigate('/dispatch'); }}
       />
@@ -380,7 +382,7 @@ export default function App() {
                   {['admin', 'owner', 'pm'].includes((profile?.role || '').toLowerCase().trim()) && (
                     <ProfitAnalytics supabase={supabase} profile={profile} activeProjects={projects.filter(p => ['scheduled','active','in_progress','pending'].includes(p.status))} />
                   )}
-                  <CommandCenter profile={profile} projects={projects} teamMembers={teamMembers} onProjectSelect={(proj) => { setSelectedProject(proj); navigate(`/project/${proj.id}`); }} onCreateProject={handleCreateProject} onArchiveProject={handleArchiveProject} />
+                  <CommandCenter profile={profile} projects={projects} teamMembers={teamMembers} onProjectSelect={(proj) => { setSelectedProject(proj); navigate(`/project/${proj.id}`); }} onCreateProject={handleCreateProject} onArchiveProject={handleArchiveProject} onProjectUpdate={handleProjectUpdate} />
                 </>
               )
             } />
