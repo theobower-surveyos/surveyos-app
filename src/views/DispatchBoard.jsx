@@ -233,27 +233,20 @@ export default function DispatchBoard({ supabase, profile, projects = [], teamMe
     return () => { cancelled = true; };
   }, [supabase, profile?.firm_id]);
 
-  // Merge parent updates without clobbering optimistic local assignments.
-  // Any of these fields, if locally newer, is preserved across a refetch.
-  const OPTIMISTIC_FIELDS = ['assigned_to', 'scheduled_date', 'scheduled_end_date', 'assigned_crew', 'required_equipment'];
+  // Sync local state directly from parent. The previous OPTIMISTIC_FIELDS
+  // merge was intended to protect in-flight drag edits from being clobbered
+  // by a stale parent refetch, but it also ate incoming REALTIME updates
+  // for rows this tab already had in state — it couldn't distinguish
+  // "uncommitted optimistic write from this tab" from "stale local snapshot
+  // waiting for a fresh server push." The fix is to trust parent always.
+  //
+  // Same-tab optimistic writes still work because handleDragEnd and drawer
+  // handlers call setLocalProjects synchronously BEFORE awaiting persist —
+  // the drag appears instantly, then parent state catches up via either
+  // the persist's onProjectUpdate lift or the realtime echo, and the
+  // converged state matches the optimistic state. No flicker.
   React.useEffect(() => {
-    setLocalProjects(prev => {
-      const prevById = new Map(prev.map(p => [p.id, p]));
-      return projects.map(p => {
-        const local = prevById.get(p.id);
-        if (!local) return p;
-        const patch = {};
-        for (const field of OPTIMISTIC_FIELDS) {
-          // shallow JSON compare is sufficient for strings / uuids / arrays
-          const lv = JSON.stringify(local[field]);
-          const rv = JSON.stringify(p[field]);
-          if (local[field] !== undefined && lv !== rv) {
-            patch[field] = local[field];
-          }
-        }
-        return Object.keys(patch).length ? { ...p, ...patch } : p;
-      });
-    });
+    setLocalProjects(projects);
   }, [projects]);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));

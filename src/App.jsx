@@ -139,6 +139,18 @@ export default function App() {
   // it's working (channel subscribes, no errors) but no payloads arrive.
   useEffect(() => {
     if (!profile?.firm_id || shareId) return;
+
+    // Defense against iOS Safari's session-restore race: the realtime
+    // websocket may have connected BEFORE the session's access_token was
+    // loaded, in which case Realtime evaluates RLS as anon and silently
+    // drops every event. Explicitly set the token before subscribing.
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.access_token && supabase.realtime?.setAuth) {
+        supabase.realtime.setAuth(session.access_token);
+        console.log('[Realtime] set auth token on websocket');
+      }
+    });
+
     const channelName = 'firm-projects-' + profile.firm_id;
     console.log('[Realtime] subscribing', channelName);
     const channel = supabase.channel(channelName)
