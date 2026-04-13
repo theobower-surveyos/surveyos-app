@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { AlertCircle, MapPin, ChevronLeft, ChevronRight, X, FileText, User, CheckCircle2, Receipt, Navigation, Play, Camera, ArrowLeft } from 'lucide-react';
+import { AlertCircle, MapPin, ChevronLeft, ChevronRight, X, FileText, User, CheckCircle2, Receipt, Navigation, Play, Camera, ArrowLeft, Clock } from 'lucide-react';
 import {
   DndContext,
   PointerSensor,
@@ -888,6 +888,9 @@ function DispatchProjectDrawer({ project, crewLookup, equipmentList = [], equipm
   const [uploading, setUploading] = React.useState(false);
   const [localNotes, setLocalNotes] = React.useState('');
   const fileInputRef = React.useRef(null);
+  // End-of-day summary modal — populated when crew taps Mark Complete.
+  // Shape: null | { projectName, projectShortId, hours, tasks }
+  const [endOfDayCard, setEndOfDayCard] = React.useState(null);
 
   // Mirror server notes into local state whenever the project changes.
   React.useEffect(() => { setLocalNotes(project?.notes || ''); }, [project?.id, project?.notes]);
@@ -931,29 +934,72 @@ function DispatchProjectDrawer({ project, crewLookup, equipmentList = [], equipm
     const url = `https://maps.apple.com/?daddr=${encodeURIComponent(dest)}`;
     window.open(url, '_blank');
   }
-  const startWork = () => project && onProjectUpdate(project.id, { status: 'in_progress' });
-  const markComplete = () => project && onProjectUpdate(project.id, { status: 'completed' });
+
+  // Secret time tracking: started_at / completed_at timestamps are
+  // captured on the project row but never shown to the field crew.
+  // PMs see them via the Field Log section below. Don't overwrite
+  // started_at if it's already set — coalesce to existing value.
+  const startWork = () => {
+    if (!project) return;
+    const patch = { status: 'in_progress' };
+    if (!project.started_at) patch.started_at = new Date().toISOString();
+    onProjectUpdate(project.id, patch);
+  };
+
+  const markComplete = () => {
+    if (!project) return;
+    const nowIso = new Date().toISOString();
+    const patch = { status: 'completed', completed_at: nowIso };
+    // If the crew jumped straight to complete without tapping Start Work,
+    // backfill started_at so the duration math doesn't explode.
+    if (!project.started_at) patch.started_at = nowIso;
+    onProjectUpdate(project.id, patch);
+
+    // Open the end-of-day summary card. Hours are rounded to nearest half
+    // for timesheet-friendly display; exact times live only in the DB.
+    const startMs = project.started_at
+      ? new Date(project.started_at).getTime()
+      : new Date(nowIso).getTime();
+    const endMs = new Date(nowIso).getTime();
+    const diffMinutes = Math.max(0, (endMs - startMs) / 60000);
+    // Round to nearest 0.5 hour; minimum 0.25 so a single-tap job shows > 0
+    let hours = Math.round((diffMinutes / 60) * 2) / 2;
+    if (hours < 0.25) hours = 0.25;
+
+    const scope = Array.isArray(project.scope) ? project.scope : [];
+    const tasks = scope.length > 0 ? scope : [project.project_name || 'Job complete'];
+
+    setEndOfDayCard({
+      projectName: project.project_name || 'Project',
+      projectShortId: (project.id || '').slice(0, 8).toUpperCase(),
+      hours,
+      tasks,
+    });
+  };
 
   async function handlePhotoCapture(e) {
     const file = e.target.files?.[0];
     if (!file || !project?.id || !supabase) return;
+    console.log('[Drawer] photo upload starting', { name: file.name, size: file.size, type: file.type });
     setUploading(true);
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const safeName = (file.name || 'photo.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
     const filename = `${Date.now()}_${safeName}`;
-    const { error } = await supabase.storage
+    const { data, error } = await supabase.storage
       .from('project-photos')
       .upload(`${project.id}/${filename}`, file, {
         contentType: file.type || 'image/jpeg',
         upsert: false,
       });
+    console.log('[Drawer] photo upload result', { data, error });
     setUploading(false);
     e.target.value = ''; // allow re-selecting the same file
     if (error) {
       console.error('[Drawer] photo upload error:', error);
-      alert(`Photo upload failed: ${error.message || 'unknown error'}`);
+      const msg = error.message || error.error || error.statusCode || 'unknown error';
+      alert(`Photo upload failed: ${msg}\n\nIf this keeps happening, verify the project-photos bucket exists and migration 10 has been run.`);
       return;
     }
-    fetchPhotos();
+    await fetchPhotos();
   }
 
   // Reset invoice state when project changes
@@ -1616,6 +1662,81 @@ function DispatchProjectDrawer({ project, crewLookup, equipmentList = [], equipm
             </DrawerSection>
           )}
 
+          {/* Field Log — PM-only audit view of actual start/end timestamps.
+              Field crews do NOT see this section; it is gated by canEdit.
+              Surfaces the precise timestamps for comparison against the
+              field crew's timesheet entry. */}
+          {canEdit && (project?.started_at || project?.completed_at) && (
+            <DrawerSection title="Field Log" icon={<Clock size={14} />}>
+              <div style={{
+                padding: '14px 16px',
+                borderRadius: '8px',
+                backgroundColor: SURFACE.card,
+                border: `1px solid ${HAIRLINE}`,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px',
+              }}>
+                {project?.started_at && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                    <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1.5px', fontWeight: '700' }}>
+                      Started
+                    </span>
+                    <span style={{ fontSize: '0.84rem', fontWeight: '600', color: 'var(--text-main)', fontFamily: "'JetBrains Mono', 'SF Mono', monospace" }}>
+                      {new Date(project.started_at).toLocaleString('en-US', {
+                        weekday: 'short', month: 'short', day: 'numeric',
+                        hour: 'numeric', minute: '2-digit',
+                      })}
+                    </span>
+                  </div>
+                )}
+                {project?.completed_at && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                    <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1.5px', fontWeight: '700' }}>
+                      Completed
+                    </span>
+                    <span style={{ fontSize: '0.84rem', fontWeight: '600', color: 'var(--text-main)', fontFamily: "'JetBrains Mono', 'SF Mono', monospace" }}>
+                      {new Date(project.completed_at).toLocaleString('en-US', {
+                        weekday: 'short', month: 'short', day: 'numeric',
+                        hour: 'numeric', minute: '2-digit',
+                      })}
+                    </span>
+                  </div>
+                )}
+                {project?.started_at && project?.completed_at && (() => {
+                  const ms = new Date(project.completed_at).getTime() - new Date(project.started_at).getTime();
+                  if (ms < 0) return null;
+                  const totalMinutes = Math.round(ms / 60000);
+                  const h = Math.floor(totalMinutes / 60);
+                  const m = totalMinutes % 60;
+                  return (
+                    <div style={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px',
+                      paddingTop: '10px',
+                      borderTop: `1px solid ${HAIRLINE}`,
+                    }}>
+                      <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1.5px', fontWeight: '700' }}>
+                        Actual duration
+                      </span>
+                      <span style={{ fontSize: '0.92rem', fontWeight: '700', color: ACCENT.action, fontFamily: "'JetBrains Mono', 'SF Mono', monospace", letterSpacing: '-0.01em' }}>
+                        {h > 0 ? `${h}h ` : ''}{m}m
+                      </span>
+                    </div>
+                  );
+                })()}
+                <div style={{
+                  fontSize: '0.66rem',
+                  color: 'var(--text-muted)',
+                  fontStyle: 'italic',
+                  marginTop: '4px',
+                  lineHeight: '1.4',
+                }}>
+                  Auto-logged on Start Work / Mark Complete.
+                </div>
+              </div>
+            </DrawerSection>
+          )}
+
           {/* Equipment — multi-select chip input */}
           <DrawerSection title="Equipment" icon={<Receipt size={14} />}>
             <div style={{
@@ -2038,6 +2159,244 @@ function DispatchProjectDrawer({ project, crewLookup, equipmentList = [], equipm
           </div>
         )}
       </aside>
+
+      {/* End-of-day summary modal — shown to field crews after Mark Complete */}
+      {endOfDayCard && (
+        <EndOfDaySummary
+          card={endOfDayCard}
+          firstName={profile?.first_name}
+          onDismiss={() => {
+            setEndOfDayCard(null);
+            handleClose();
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════
+// END-OF-DAY SUMMARY MODAL
+// ══════════════════════════════════════════════════════════════════
+// Shown to field crews after they tap Mark Complete. Framed as a
+// "timesheet helper" — the hours displayed are rounded to the nearest
+// half-hour. The precise on-site timestamps live in the DB (started_at
+// / completed_at) and are only surfaced in the PM's Field Log section.
+// The crew is never told those precise timestamps exist.
+function EndOfDaySummary({ card, firstName, onDismiss }) {
+  if (!card) return null;
+  return (
+    <>
+      <div
+        onClick={onDismiss}
+        style={{
+          position: 'fixed', inset: 0,
+          backgroundColor: 'rgba(0,0,0,0.72)',
+          backdropFilter: 'blur(6px)',
+          zIndex: 10000,
+          animation: 'fadeIn 180ms ease-out',
+        }}
+      />
+      <div
+        style={{
+          position: 'fixed',
+          top: '50%', left: '50%',
+          transform: 'translate(-50%, -50%)',
+          width: 'calc(100vw - 32px)',
+          maxWidth: '420px',
+          backgroundColor: SURFACE.panel,
+          border: `1px solid ${EDGE}`,
+          borderRadius: '20px',
+          padding: '32px 28px 24px',
+          boxShadow: '0 40px 80px rgba(0, 0, 0, 0.65)',
+          zIndex: 10001,
+          color: 'var(--text-main)',
+          fontFamily: FONT,
+          animation: 'fadeIn 240ms cubic-bezier(0.16, 1, 0.3, 1)',
+        }}
+      >
+        <style>{`
+          @keyframes fadeIn {
+            from { opacity: 0; transform: translate(-50%, -48%) scale(0.96); }
+            to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+          }
+        `}</style>
+
+        {/* Celebration icon */}
+        <div style={{
+          width: '56px',
+          height: '56px',
+          borderRadius: '50%',
+          backgroundColor: 'rgba(52, 199, 89, 0.14)',
+          border: `1.5px solid var(--success)`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginBottom: '18px',
+        }}>
+          <CheckCircle2 size={28} color="var(--success)" strokeWidth={2} />
+        </div>
+
+        <h2 style={{
+          margin: '0 0 4px 0',
+          fontSize: '1.5rem',
+          fontWeight: '800',
+          letterSpacing: '-0.02em',
+          color: 'var(--text-main)',
+          lineHeight: 1.15,
+        }}>
+          Great work{firstName ? `, ${firstName}` : ''}.
+        </h2>
+        <p style={{
+          margin: '0 0 24px 0',
+          fontSize: '0.92rem',
+          color: 'var(--text-muted)',
+          letterSpacing: '-0.01em',
+        }}>
+          Here's your day at a glance for your timesheet.
+        </p>
+
+        {/* Project # badge */}
+        <div style={{
+          fontSize: '0.66rem',
+          fontFamily: "'JetBrains Mono', 'SF Mono', monospace",
+          fontWeight: '700',
+          color: ACCENT.attention,
+          backgroundColor: 'var(--brand-amber-muted)',
+          padding: '6px 10px',
+          borderRadius: '6px',
+          display: 'inline-block',
+          letterSpacing: '0.08em',
+          marginBottom: '14px',
+        }}>
+          {card.projectShortId}
+        </div>
+
+        {/* Project name */}
+        <div style={{
+          fontSize: '1.1rem',
+          fontWeight: '700',
+          color: 'var(--text-main)',
+          letterSpacing: '-0.015em',
+          marginBottom: '20px',
+          lineHeight: 1.3,
+        }}>
+          {card.projectName}
+        </div>
+
+        {/* Hours — the hero number */}
+        <div style={{
+          padding: '20px 22px',
+          borderRadius: '14px',
+          backgroundColor: SURFACE.card,
+          border: `1px solid ${HAIRLINE}`,
+          marginBottom: '16px',
+          display: 'flex',
+          alignItems: 'baseline',
+          justifyContent: 'space-between',
+          gap: '12px',
+        }}>
+          <div>
+            <div style={{
+              fontSize: '0.64rem',
+              fontWeight: '700',
+              letterSpacing: '1.5px',
+              textTransform: 'uppercase',
+              color: 'var(--text-muted)',
+              marginBottom: '6px',
+            }}>
+              Hours Worked
+            </div>
+            <div style={{
+              fontSize: '0.72rem',
+              color: 'var(--text-muted)',
+              fontStyle: 'italic',
+            }}>
+              for your timesheet
+            </div>
+          </div>
+          <div style={{
+            fontSize: '3rem',
+            fontWeight: '800',
+            color: ACCENT.action,
+            letterSpacing: '-0.04em',
+            lineHeight: 1,
+            fontVariantNumeric: 'tabular-nums',
+          }}>
+            {card.hours}
+          </div>
+        </div>
+
+        {/* Tasks completed */}
+        <div style={{
+          padding: '16px 18px',
+          borderRadius: '12px',
+          backgroundColor: SURFACE.card,
+          border: `1px solid ${HAIRLINE}`,
+          marginBottom: '24px',
+        }}>
+          <div style={{
+            fontSize: '0.62rem',
+            fontWeight: '700',
+            letterSpacing: '1.5px',
+            textTransform: 'uppercase',
+            color: 'var(--text-muted)',
+            marginBottom: '10px',
+          }}>
+            Tasks Completed
+          </div>
+          <ul style={{
+            listStyle: 'none',
+            padding: 0,
+            margin: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px',
+          }}>
+            {card.tasks.map((t, i) => {
+              const label = typeof t === 'string' ? t : (t?.label || t?.name || 'Task');
+              return (
+                <li key={i} style={{
+                  fontSize: '0.88rem',
+                  color: 'var(--text-main)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  letterSpacing: '-0.01em',
+                }}>
+                  <span style={{
+                    width: '6px', height: '6px', borderRadius: '50%',
+                    backgroundColor: 'var(--success)',
+                    flexShrink: 0,
+                  }} />
+                  {label}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+
+        {/* Done button */}
+        <button
+          onClick={onDismiss}
+          style={{
+            width: '100%',
+            padding: '16px',
+            borderRadius: '12px',
+            border: 'none',
+            backgroundColor: ACCENT.action,
+            color: 'var(--text-main)',
+            fontSize: '1rem',
+            fontWeight: '700',
+            letterSpacing: '-0.01em',
+            cursor: 'pointer',
+            fontFamily: FONT,
+            minHeight: '52px',
+          }}
+        >
+          Done
+        </button>
+      </div>
     </>
   );
 }
