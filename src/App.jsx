@@ -69,7 +69,7 @@ export default function App() {
     if (!userId) { setLoading(false); return; }
     let profileLoaded = false;
     try {
-      const { data: profileData } = await supabase.from('user_profiles').select('role, first_name, firm_id').eq('id', userId).single();
+      const { data: profileData } = await supabase.from('user_profiles').select('id, role, first_name, last_name, firm_id').eq('id', userId).single();
       if (profileData) {
         setProfile(profileData);
         profileLoaded = true;
@@ -78,11 +78,14 @@ export default function App() {
       }
       const { data: projectsData } = await supabase.from('projects').select('*').neq('status', 'archived').order('created_at', { ascending: false });
       if (projectsData) setProjects(projectsData);
-    } catch (err) { 
-      console.error('[App] error:', err); 
-    } finally { 
-      if (!profileLoaded) setProfile({ role: 'admin', first_name: 'Founder', firm_id: null });
-      setLoading(false); 
+    } catch (err) {
+      console.error('[App] error:', err);
+    } finally {
+      // Fallback ONLY preserves identity so RLS has a uid to check against.
+      // Do NOT grant 'admin' here — if the profile fetch failed, the user
+      // should see an empty dashboard, not silently escalated privileges.
+      if (!profileLoaded) setProfile({ id: userId, role: 'unknown', first_name: 'Unknown', firm_id: null });
+      setLoading(false);
     }
   }
 
