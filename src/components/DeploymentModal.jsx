@@ -16,6 +16,7 @@ const SCOPE_OPTIONS = [
 
 export default function DeploymentModal({ isOpen, onClose, teamMembers, onDispatch }) {
   const [projectName, setProjectName] = useState('');
+  const [location, setLocation] = useState('');
   const [scheduledDate, setScheduledDate] = useState('');
   const [contractFee, setContractFee] = useState('');
   const [scope, setScope] = useState([]);
@@ -29,6 +30,7 @@ export default function DeploymentModal({ isOpen, onClose, teamMembers, onDispat
 
   const resetForm = () => {
     setProjectName('');
+    setLocation('');
     setScheduledDate('');
     setContractFee('');
     setScope([]);
@@ -66,6 +68,7 @@ export default function DeploymentModal({ isOpen, onClose, teamMembers, onDispat
     // Build the clean payload — all UUIDs are raw strings
     await onDispatch({
       project_name: projectName.trim(),
+      location: location.trim() || null,
       scheduled_date: scheduledDate || new Date().toISOString().split('T')[0],
       contract_fee: parseFloat(contractFee) || 0,
       scope: scope,
@@ -169,6 +172,12 @@ export default function DeploymentModal({ isOpen, onClose, teamMembers, onDispat
           <div>
             <label style={LBL}>Project Name</label>
             <input type="text" value={projectName} onChange={(e) => setProjectName(e.target.value)} placeholder="Site address or Lot #" style={INP} />
+          </div>
+
+          {/* LOCATION */}
+          <div>
+            <label style={LBL}>Location</label>
+            <input type="text" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="City, ST or job site area" style={INP} />
           </div>
 
           {/* DATE + FEE — side by side */}

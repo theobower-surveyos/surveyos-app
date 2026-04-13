@@ -37,32 +37,56 @@ export default function Roster({ profile }) {
   const [inviting, setInviting] = useState(false);
   const [toast, setToast] = useState(null);
   const [editingMember, setEditingMember] = useState(null);
+  const [ptoRows, setPtoRows] = useState([]);
+  const [editingPTO, setEditingPTO] = useState(null); // row object or { new: true } for Add
 
   useEffect(() => { fetchRoster(); }, []);
+  useEffect(() => { fetchPTO(); }, [profile?.firm_id]);
+
+  const fetchPTO = async () => {
+    if (!profile?.firm_id) return;
+    const { data, error } = await supabase
+      .from('crew_unavailability')
+      .select('*')
+      .eq('firm_id', profile.firm_id)
+      .order('start_date', { ascending: true });
+    if (error) { console.error('[Roster] crew_unavailability fetch error:', error); return; }
+    if (data) setPtoRows(data);
+  };
+
+  const handlePTODelete = async (id) => {
+    if (!window.confirm('Remove this time off entry?')) return;
+    const { error } = await supabase.from('crew_unavailability').delete().eq('id', id);
+    if (error) { console.error('[Roster] pto delete error:', error); return; }
+    setPtoRows(prev => prev.filter(r => r.id !== id));
+    showToastMsg('Time off removed');
+  };
 
   const fetchRoster = async () => {
     setLoading(true);
-    // COMMENTED OUT: user_profiles fetch network request
-    // try {
-    //   const { data, error } = await supabase
-    //     .from('user_profiles')
-    //     .select('id, first_name, last_name, email, phone, role, is_active, created_at')
-    //     .eq('firm_id', profile?.firm_id)
-    //     .order('created_at', { ascending: true });
-    //
-    //   if (error) {
-    //     console.error('[Roster] user_profiles fetch error:', error.message, error.details, error.hint);
-    //     setRoster(MOCK_ROSTER);
-    //   } else if (data && data.length > 0) {
-    //     setRoster(data);
-    //   } else {
-    //     setRoster(MOCK_ROSTER);
-    //   }
-    // } catch (err) {
-    //   console.error('[Roster] user_profiles fetch exception:', err);
-    //   setRoster(MOCK_ROSTER);
-    // }
-    setRoster(MOCK_ROSTER);
+    if (!profile?.firm_id) {
+      setRoster(MOCK_ROSTER);
+      setLoading(false);
+      return;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('id, first_name, last_name, email, phone, role, is_active, created_at, certifications, assigned_equipment')
+        .eq('firm_id', profile.firm_id)
+        .order('created_at', { ascending: true });
+      if (error) {
+        console.error('[Roster] user_profiles fetch error:', error.message, error.details, error.hint);
+        setRoster(MOCK_ROSTER);
+      } else if (data && data.length > 0) {
+        setRoster(data);
+      } else {
+        setRoster(MOCK_ROSTER);
+      }
+    } catch (err) {
+      console.error('[Roster] user_profiles fetch exception:', err);
+      setRoster(MOCK_ROSTER);
+    }
     setLoading(false);
   };
 
@@ -293,12 +317,100 @@ export default function Roster({ profile }) {
         )}
       </div>
 
+      {/* TIME OFF */}
+      <div style={{ marginTop: '28px', backgroundColor: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--border-subtle)', overflow: 'hidden' }}>
+        <div style={{ padding: '22px 26px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-subtle)' }}>
+          <div>
+            <h3 style={{ margin: '0 0 4px', fontSize: '1.05em', color: 'var(--text-main)', letterSpacing: '-0.01em' }}>Time Off</h3>
+            <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.82em' }}>
+              {ptoRows.length} upcoming block{ptoRows.length !== 1 ? 's' : ''} · blocks the dispatch board on these days
+            </p>
+          </div>
+          {isOwnerOrAdmin && (
+            <button
+              onClick={() => setEditingPTO({ new: true })}
+              style={{
+                padding: '10px 18px', borderRadius: '10px', border: 'none',
+                backgroundColor: '#0D4F4F', color: '#fff', fontWeight: '700', fontSize: '0.85em', cursor: 'pointer',
+              }}
+            >
+              + Add Time Off
+            </button>
+          )}
+        </div>
+        {ptoRows.length === 0 ? (
+          <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85em' }}>
+            No time off scheduled.
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.86em' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid var(--border-subtle)' }}>
+                  <th style={TH}>Member</th>
+                  <th style={TH}>Start</th>
+                  <th style={TH}>End</th>
+                  <th style={TH}>Reason</th>
+                  {isOwnerOrAdmin && <th style={{ ...TH, textAlign: 'right' }}>Actions</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {ptoRows.map(row => {
+                  const member = roster.find(m => m.id === row.user_id);
+                  const name = member ? `${member.first_name || ''} ${member.last_name || ''}`.trim() : row.user_id.slice(0, 8);
+                  const fmt = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                  return (
+                    <tr key={row.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                      <td style={TD}>
+                        <div style={{ fontWeight: '600', color: 'var(--text-main)' }}>{name}</div>
+                      </td>
+                      <td style={TD}><span style={{ fontFamily: MONO, fontSize: '0.88em', color: 'var(--text-muted)' }}>{fmt(row.start_date)}</span></td>
+                      <td style={TD}><span style={{ fontFamily: MONO, fontSize: '0.88em', color: 'var(--text-muted)' }}>{fmt(row.end_date)}</span></td>
+                      <td style={TD}><span style={{ color: 'var(--text-main)' }}>{row.reason || <em style={{ color: '#555' }}>—</em>}</span></td>
+                      {isOwnerOrAdmin && (
+                        <td style={{ ...TD, textAlign: 'right' }}>
+                          <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
+                            <button
+                              onClick={() => setEditingPTO(row)}
+                              style={ACT_BTN}
+                              onMouseEnter={(e) => { e.currentTarget.style.color = '#007AFF'; e.currentTarget.style.borderColor = '#007AFF'; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border-subtle)'; }}
+                            >Edit</button>
+                            <button
+                              onClick={() => handlePTODelete(row.id)}
+                              style={ACT_BTN}
+                              onMouseEnter={(e) => { e.currentTarget.style.color = '#FF453A'; e.currentTarget.style.borderColor = '#FF453A'; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border-subtle)'; }}
+                            >Del</button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       {/* EDIT CAPABILITIES MODAL */}
       {editingMember && (
         <EditAssetsModal
           member={editingMember}
           onClose={() => setEditingMember(null)}
           onSave={handleSaveAssets}
+        />
+      )}
+
+      {/* PTO ADD / EDIT MODAL */}
+      {editingPTO && (
+        <PTOEditModal
+          row={editingPTO.new ? null : editingPTO}
+          roster={roster}
+          profile={profile}
+          onClose={() => setEditingPTO(null)}
+          onSaved={() => { fetchPTO(); setEditingPTO(null); showToastMsg('Time off saved'); }}
         />
       )}
 
@@ -383,6 +495,125 @@ function EditAssetsModal({ member, onClose, onSave }) {
           style={{ width: '100%', padding: '14px', borderRadius: '10px', border: 'none', backgroundColor: '#fff', color: '#000', fontWeight: '700', fontSize: '0.9em', cursor: 'pointer' }}
         >
           Save Capabilities
+        </button>
+      </div>
+    </>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// PTO EDIT MODAL
+// ═══════════════════════════════════════════════════════════
+
+function PTOEditModal({ row, roster, profile, onClose, onSaved }) {
+  const isEdit = !!row;
+  const [userId, setUserId] = useState(row?.user_id || '');
+  const [startDate, setStartDate] = useState(row?.start_date || '');
+  const [endDate, setEndDate] = useState(row?.end_date || '');
+  const [reason, setReason] = useState(row?.reason || '');
+  const [busy, setBusy] = useState(false);
+
+  // Only field-side members can have time off (owners/admins scheduling themselves is weird).
+  const eligibleMembers = (roster || []).filter(m =>
+    ['field_crew', 'technician', 'party_chief', 'pm', 'cad', 'drafter'].includes(m.role)
+  );
+
+  const handleSave = async () => {
+    if (!userId || !startDate || !endDate) return;
+    if (new Date(endDate) < new Date(startDate)) {
+      alert('End date must be on or after start date.');
+      return;
+    }
+    setBusy(true);
+    if (isEdit) {
+      const { error } = await supabase
+        .from('crew_unavailability')
+        .update({ user_id: userId, start_date: startDate, end_date: endDate, reason: reason || null })
+        .eq('id', row.id);
+      if (error) { console.error('[PTOEditModal] update error:', error); setBusy(false); return; }
+    } else {
+      const { error } = await supabase
+        .from('crew_unavailability')
+        .insert([{
+          user_id: userId,
+          firm_id: profile?.firm_id,
+          start_date: startDate,
+          end_date: endDate,
+          reason: reason || null,
+          created_by: profile?.id || null,
+        }]);
+      if (error) { console.error('[PTOEditModal] insert error:', error); setBusy(false); return; }
+    }
+    setBusy(false);
+    onSaved();
+  };
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 1200, backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }} />
+      <div style={{
+        position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+        zIndex: 1201, width: '440px', maxWidth: '92vw',
+        backgroundColor: 'var(--bg-dark, #0A0A0A)', border: '1px solid var(--border-subtle, rgba(255,255,255,0.08))',
+        borderRadius: '20px', boxShadow: '0 30px 60px rgba(0,0,0,0.5)', padding: '28px',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+          <h3 style={{ margin: 0, fontSize: '1.1em', color: '#fff' }}>
+            {isEdit ? 'Edit Time Off' : 'Add Time Off'}
+          </h3>
+          <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: '8px', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#888', fontSize: '1.1em' }}>&times;</button>
+        </div>
+
+        <div style={{ marginBottom: '16px' }}>
+          <label style={LABEL}>Member</label>
+          <select
+            value={userId}
+            onChange={(e) => setUserId(e.target.value)}
+            style={{ ...INPUT, cursor: 'pointer' }}
+          >
+            <option value="">Select a member…</option>
+            {eligibleMembers.map(m => (
+              <option key={m.id} value={m.id}>
+                {m.first_name} {m.last_name} — {m.role}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+          <div>
+            <label style={LABEL}>Start Date</label>
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} style={INPUT} />
+          </div>
+          <div>
+            <label style={LABEL}>End Date</label>
+            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} style={INPUT} />
+          </div>
+        </div>
+
+        <div style={{ marginBottom: '22px' }}>
+          <label style={LABEL}>Reason</label>
+          <input
+            type="text"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Vacation, sick, training, conference…"
+            style={INPUT}
+          />
+        </div>
+
+        <button
+          onClick={handleSave}
+          disabled={busy || !userId || !startDate || !endDate}
+          style={{
+            width: '100%', padding: '14px', borderRadius: '10px', border: 'none',
+            backgroundColor: '#0D4F4F', color: '#fff',
+            fontWeight: '700', fontSize: '0.9em',
+            cursor: busy ? 'wait' : 'pointer',
+            opacity: busy ? 0.7 : 1,
+          }}
+        >
+          {busy ? 'Saving…' : isEdit ? 'Save Changes' : 'Add Time Off'}
         </button>
       </div>
     </>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, Component } from 'react'
-import { Routes, Route, useNavigate, useLocation } from 'react-router-dom'
+import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 import Auth from './Auth'
 import TodaysWork from './views/TodaysWork'
@@ -151,6 +151,12 @@ export default function App() {
     setProjects(prev => prev.filter(p => p.id !== projectId));
   }
 
+  // Shared optimistic patcher — any view that mutates a project should call this
+  // so cross-tab navigation stays in sync without a network refetch.
+  function handleProjectUpdate(projectId, patch) {
+    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, ...patch } : p));
+  }
+
   async function handleCreateProject(projectData) {
     let assignedTo = projectData.assigned_to;
     if (assignedTo && typeof assignedTo === 'object') assignedTo = assignedTo.id;
@@ -158,9 +164,11 @@ export default function App() {
     const { data, error } = await supabase.from('projects').insert([{
       firm_id: profile.firm_id,
       project_name: projectData.project_name,
+      location: projectData.location || null,
       fee_type: projectData.fee_type || 'lump_sum',
       contract_fee: parseFloat(projectData.contract_fee) || 0,
       scheduled_date: projectData.scheduled_date || null,
+      scheduled_end_date: projectData.scheduled_end_date || null,
       scope: Array.isArray(projectData.scope) ? projectData.scope : (projectData.scope_checklist || []),
       assigned_to: assignedTo || null,
       assigned_crew: Array.isArray(projectData.assigned_crew) ? projectData.assigned_crew : [],
@@ -169,7 +177,12 @@ export default function App() {
       status: 'pending',
     }]).select();
 
-    if (!error) { fetchDashboardData(session.user.id); return data?.[0] || null; }
+    if (!error && data?.[0]) {
+      // Immediately add to lifted state so every view (Dispatch Board's holding
+      // queue included) sees the new project without waiting for a refetch.
+      setProjects(prev => [data[0], ...prev]);
+      return data[0];
+    }
     return null;
   }
 
@@ -276,16 +289,26 @@ export default function App() {
           </div>
         )}
 
-        {/* ══════════ MAIN CONTENT AREA ══════════ */}
+ {/* ══════════ MAIN CONTENT AREA ══════════ */}
         <div className="app-main-content" style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflowY: 'auto', boxSizing: 'border-box' }}>
           <Routes>
+            {/* ══════════ ROLE-BASED ROUTING FOR HOME ══════════ */}
             <Route path="/" element={
-              <>
-                <ProfitAnalytics supabase={supabase} profile={profile} activeProjects={projects.filter(p => ['scheduled','active','in_progress','pending'].includes(p.status))} />
-                <CommandCenter profile={profile} projects={projects} teamMembers={teamMembers} onProjectSelect={(proj) => { setSelectedProject(proj); navigate(`/project/${proj.id}`); }} onCreateProject={handleCreateProject} onArchiveProject={handleArchiveProject} />
-              </>
+              ['field_crew', 'technician'].includes((profile?.role || '').toLowerCase().trim()) ? (
+                /* If Field Crew: Instantly bounce them to the Dispatch Agenda */
+                <Navigate to="/dispatch" replace />
+              ) : (
+                /* If Office Staff: Show the God-Mode Command Center */
+                <>
+                  {['admin', 'owner', 'pm'].includes((profile?.role || '').toLowerCase().trim()) && (
+                    <ProfitAnalytics supabase={supabase} profile={profile} activeProjects={projects.filter(p => ['scheduled','active','in_progress','pending'].includes(p.status))} />
+                  )}
+                  <CommandCenter profile={profile} projects={projects} teamMembers={teamMembers} onProjectSelect={(proj) => { setSelectedProject(proj); navigate(`/project/${proj.id}`); }} onCreateProject={handleCreateProject} onArchiveProject={handleArchiveProject} />
+                </>
+              )
             } />
-            <Route path="/dispatch" element={<DispatchBoard supabase={supabase} projects={projects} teamMembers={teamMembers} onRefresh={() => fetchDashboardData(session.user.id)} />} />
+
+            <Route path="/dispatch" element={<DispatchBoard supabase={supabase} profile={profile} projects={projects} teamMembers={teamMembers} onProjectUpdate={handleProjectUpdate} onRefresh={() => fetchDashboardData(session.user.id)} />} />
             <Route path="/network-ops" element={<NetworkOps supabase={supabase} profile={profile} />} />
             <Route path="/equipment" element={<EquipmentLogistics supabase={supabase} profile={profile} teamMembers={teamMembers} />} />
             <Route path="/roster" element={<Roster supabase={supabase} profile={profile} />} />
@@ -312,7 +335,6 @@ export default function App() {
               ) : <div style={{ color: 'var(--text-muted)', padding: '40px', textAlign: 'center' }}>Select a project from Command Center to open Live Field View.</div>
             } />
             <Route path="/project/:id" element={<LiveView />} />
-            <Route path="/dispatch/:id" element={<DispatchBoard />} />
             <Route path="/crew" element={<MobileCrewView />} />
             <Route path="*" element={<div style={{ color: 'var(--text-muted)', padding: '40px', textAlign: 'center' }}><h2>404 — Route Not Found</h2><button onClick={() => navigate('/')} style={{ marginTop: '16px', padding: '10px 24px', backgroundColor: 'var(--brand-teal)', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}>Back to Command Center</button></div>} />
           </Routes>
