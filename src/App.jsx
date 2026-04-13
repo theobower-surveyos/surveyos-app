@@ -121,6 +121,47 @@ export default function App() {
     }
   }, [selectedProject?.id, shareId]);
 
+  // ─── Firm-wide projects realtime ─────────────────────────────
+  // This is the sync loop that makes "PM dispatches → Party Chief's phone
+  // lights up" actually work. Listens for any INSERT / UPDATE / DELETE on
+  // the `projects` table scoped to this firm, and merges the change into
+  // the lifted `projects` state. DispatchBoard (and everything else that
+  // reads `projects`) reacts instantly on both devices without refresh.
+  //
+  // IMPORTANT: requires the `projects` table to be in the supabase_realtime
+  // publication. If it isn't, this subscription silently does nothing. Run
+  // once in the Supabase SQL editor:
+  //   alter publication supabase_realtime add table public.projects;
+  useEffect(() => {
+    if (!profile?.firm_id || shareId) return;
+    const channel = supabase.channel('firm-projects-' + profile.firm_id)
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'projects', filter: `firm_id=eq.${profile.firm_id}` },
+        (payload) => {
+          setProjects(prev => {
+            if (payload.eventType === 'INSERT') {
+              // Skip archived or duplicates (optimistic inserts from this tab)
+              if (payload.new.status === 'archived') return prev;
+              if (prev.some(p => p.id === payload.new.id)) {
+                return prev.map(p => p.id === payload.new.id ? payload.new : p);
+              }
+              return [payload.new, ...prev];
+            }
+            if (payload.eventType === 'UPDATE') {
+              // Archived projects disappear from the active list
+              if (payload.new.status === 'archived') return prev.filter(p => p.id !== payload.new.id);
+              return prev.map(p => p.id === payload.new.id ? payload.new : p);
+            }
+            if (payload.eventType === 'DELETE') {
+              return prev.filter(p => p.id !== payload.old.id);
+            }
+            return prev;
+          });
+        })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [profile?.firm_id, shareId]);
+
   async function fetchClientData(shareId) {
     const { data: tokenData } = await supabase.from('share_tokens').select('project_id').eq('token', shareId).eq('is_active', true).single();
     const projectId = tokenData?.project_id || shareId;
@@ -195,7 +236,17 @@ export default function App() {
   if (!profile) return <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-dark)', color: 'var(--text-muted)' }}>Loading SurveyOS...</div>;
 
   const isOfficeUser = !['field_crew', 'technician', 'cad', 'drafter'].includes((profile.role || '').toLowerCase().trim());
-  if (isOfficeUser && !hasReadBrief) return <ErrorBoundary><MorningBrief onProceed={() => setHasReadBrief(true)} /></ErrorBoundary>;
+  if (isOfficeUser && !hasReadBrief) return (
+    <ErrorBoundary>
+      <MorningBrief
+        profile={profile}
+        projects={projects}
+        teamMembers={teamMembers}
+        onProceed={() => setHasReadBrief(true)}
+        onGoToDispatch={() => { setHasReadBrief(true); navigate('/dispatch'); }}
+      />
+    </ErrorBoundary>
+  );
 
   const currentNav = location.pathname === '/' ? 'command_center' : location.pathname.replace('/', '').split('/')[0];
   const isMobileRoute = location.pathname.includes('/crew');

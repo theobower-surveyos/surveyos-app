@@ -1,289 +1,471 @@
-import React, { useState, useEffect } from 'react';
-import { supabase } from '../supabaseClient';
-import { Sun, Users, ClipboardCheck, AlertCircle, DollarSign, ArrowRight } from 'lucide-react';
+import { useMemo } from 'react';
+import { Sun, Users, ArrowRight, MapPin, Calendar, Inbox } from 'lucide-react';
 
-export default function MorningBrief({ onProceed }) {
-  const [metrics, setMetrics] = useState({
-    activeCrews: 0,
-    pendingDispatch: 0,
-    mathFlags: 0,
-    readyToInvoice: 0,
-    needsReview: 0,
-    recentSyncs: 0,
+// ─── Design tokens (mirror DispatchBoard) ────────────────────────────
+const FONT = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif";
+const SURFACE = {
+  base:   'var(--bg-dark)',
+  panel:  'var(--bg-surface)',
+  card:   'color-mix(in srgb, var(--bg-surface) 96%, white)',
+};
+const HAIRLINE = 'rgba(255,255,255,0.06)';
+const ACCENT = {
+  action:    'var(--brand-teal)',
+  today:     'var(--brand-teal-light)',
+  attention: 'var(--brand-amber)',
+};
+
+// ─── Date helpers ────────────────────────────────────────────────────
+const toISODate = (d) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+const isDateInSpan = (dayISO, startISO, endISO) => {
+  if (!dayISO || !startISO) return false;
+  const s = startISO.slice(0, 10);
+  const e = (endISO || startISO).slice(0, 10);
+  return dayISO >= s && dayISO <= e;
+};
+const getCrewId = (project) => {
+  const a = project?.assigned_to;
+  if (!a) return null;
+  if (typeof a === 'string') return a;
+  if (typeof a === 'object') return a.id || null;
+  return null;
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// MORNING BRIEF — 5 AM deployment sheet
+// ═══════════════════════════════════════════════════════════════════
+// The first thing a PM sees when they open the app at 5 AM.
+// It answers exactly one question: "Who is going where today?"
+//
+// Shows each field crew as a row with their job(s) for today. Flags
+// PTO. Shows holding queue count with a deploy action. Primary CTA
+// routes straight to the dispatch board — not the command center.
+// ═══════════════════════════════════════════════════════════════════
+export default function MorningBrief({ profile, projects = [], teamMembers = [], onProceed, onGoToDispatch }) {
+  const today = useMemo(() => new Date(), []);
+  const todayISO = toISODate(today);
+
+  const hour = today.getHours();
+  const greeting =
+    hour < 12 ? 'Good morning' :
+    hour < 17 ? 'Good afternoon' :
+    'Good evening';
+  const dateLabel = today.toLocaleDateString('en-US', {
+    weekday: 'long', month: 'long', day: 'numeric',
   });
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchMorningData();
-  }, []);
+  // Field roles — who shows up in the deployments list.
+  const fieldCrews = useMemo(() =>
+    (teamMembers || []).filter(m =>
+      ['field_crew', 'technician', 'party_chief'].includes((m.role || '').toLowerCase().trim())
+    ),
+    [teamMembers]
+  );
 
-  const fetchMorningData = async () => {
-    try {
-      const { data: projects, error } = await supabase
-        .from('projects')
-        .select('*')
-        .neq('status', 'archived');
+  // Active projects only (no archived, no completed).
+  const activeProjects = useMemo(() =>
+    (projects || []).filter(p => p.status !== 'archived' && p.status !== 'completed'),
+    [projects]
+  );
 
-      if (error) throw error;
+  // Projects scheduled for today (respects multi-day spans).
+  const projectsToday = useMemo(() =>
+    activeProjects.filter(p =>
+      p.scheduled_date && isDateInSpan(todayISO, p.scheduled_date, p.scheduled_end_date)
+    ),
+    [activeProjects, todayISO]
+  );
 
-      const active = projects.filter(p => p.status === 'active' || p.status === 'dispatched' || p.status === 'in_progress').length;
-      const pending = projects.filter(p => p.status === 'unassigned' || p.status === 'pending').length;
-      const completed = projects.filter(p => p.status === 'completed').length;
-      const review = projects.filter(p => p.status === 'field_complete').length;
+  // Holding queue — scheduled date or crew missing.
+  const holdingQueue = useMemo(() =>
+    activeProjects.filter(p => !getCrewId(p) || !p.scheduled_date),
+    [activeProjects]
+  );
 
-      const syncs = projects.length > 0 ? 2 : 0;
-      const flags = active > 0 ? 1 : 0;
-
-      setMetrics({
-        activeCrews: active,
-        pendingDispatch: pending,
-        mathFlags: flags,
-        readyToInvoice: completed,
-        needsReview: review,
-        recentSyncs: syncs,
-      });
-    } catch (error) {
-      console.error('Error fetching brief:', error);
-    } finally {
-      setLoading(false);
+  // Build a per-crew deployment map for today.
+  const deploymentsByCrew = useMemo(() => {
+    const map = new Map();
+    for (const crew of fieldCrews) map.set(crew.id, []);
+    for (const p of projectsToday) {
+      const lead = getCrewId(p);
+      if (lead && map.has(lead)) map.get(lead).push(p);
     }
-  };
+    return map;
+  }, [fieldCrews, projectsToday]);
 
-  if (loading) {
-    return (
-      <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', backgroundColor: '#0A0A0A' }}>
-        <p style={{ color: '#555', fontFamily: FONT, fontSize: '1.05rem', fontWeight: '500' }}>Compiling intelligence...</p>
-      </div>
-    );
-  }
-
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? 'Good morning.' : hour < 17 ? 'Good afternoon.' : 'Good evening.';
+  // Summary counts for the header strip.
+  const deployedCount = useMemo(() =>
+    fieldCrews.filter(c => (deploymentsByCrew.get(c.id) || []).length > 0).length,
+    [fieldCrews, deploymentsByCrew]
+  );
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#0A0A0A', fontFamily: FONT, padding: '8vh 5vw' }}>
+    <div style={{
+      minHeight: '100vh',
+      backgroundColor: SURFACE.base,
+      fontFamily: FONT,
+      padding: 'clamp(32px, 8vh, 80px) clamp(20px, 5vw, 60px)',
+      color: 'var(--text-main)',
+      overflowX: 'hidden',
+    }}>
       <style>{`
         @keyframes fadeUp {
-          from { opacity: 0; transform: translateY(20px); }
+          from { opacity: 0; transform: translateY(16px); }
           to   { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes slideUpFade {
-          from { opacity: 0; transform: translateY(20px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes pulseReview {
-          0%, 100% { border-color: rgba(94, 92, 230, 0.2); }
-          50%      { border-color: rgba(94, 92, 230, 0.6); }
-        }
-        @keyframes pulseAlert {
-          0%, 100% { border-color: rgba(255, 69, 58, 0.2); }
-          50%      { border-color: rgba(255, 69, 58, 0.5); }
         }
       `}</style>
 
-      <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
+      <div style={{ maxWidth: '900px', margin: '0 auto' }}>
 
-        {/* ══════════ HEADER ══════════ */}
-        <header style={{ marginBottom: '48px', animation: 'fadeUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) both', animationDelay: '0s' }}>
-          <Sun size={32} color="#D4912A" strokeWidth={1.5} style={{ marginBottom: '16px', display: 'block' }} />
-          <h1 style={{ fontSize: 'clamp(2.6rem, 6vw, 3.5rem)', fontWeight: '800', letterSpacing: '-0.04em', color: '#FFFFFF', margin: '0 0 8px 0', lineHeight: 1.05 }}>
-            {greeting}
+        {/* ─── HEADER ──────────────────────────────── */}
+        <header style={{ marginBottom: '40px', animation: 'fadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both' }}>
+          <Sun size={28} color={ACCENT.attention} strokeWidth={1.6} style={{ marginBottom: '14px', display: 'block' }} />
+          <h1 style={{
+            fontSize: 'clamp(2rem, 5vw, 2.8rem)',
+            fontWeight: '800',
+            letterSpacing: '-0.03em',
+            color: 'var(--text-main)',
+            margin: '0 0 6px 0',
+            lineHeight: 1.1,
+          }}>
+            {greeting}, {profile?.first_name || 'Operator'}.
           </h1>
-          <p style={{ fontSize: '1.3rem', color: '#A1A1AA', fontWeight: '400', margin: 0, lineHeight: 1.5 }}>
-            Here is your operational snapshot for today.
+          <p style={{
+            fontSize: 'clamp(0.95rem, 2vw, 1.15rem)',
+            color: 'var(--text-muted)',
+            fontWeight: '500',
+            margin: 0,
+            letterSpacing: '-0.01em',
+          }}>
+            {dateLabel}
           </p>
         </header>
 
-        {/* ══════════ 2x2 CARD GRID ══════════ */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '24px' }}>
-
-          {/* ━━━ CARD 1: THE FIELD ━━━ */}
-          <div
-            className="morning-brief-card"
-            style={{ ...CARD, animation: 'fadeUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) both', animationDelay: '0.1s' }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-              <span style={TITLE}>The Field</span>
-              <div style={{ ...ICON_RING, backgroundColor: 'rgba(0, 122, 255, 0.12)' }}>
-                <Users size={20} color="#007AFF" strokeWidth={2} />
-              </div>
-            </div>
-            <p style={METRIC}>{metrics.activeCrews}</p>
-            <p style={SUBTITLE}>{metrics.activeCrews === 1 ? 'crew deployed' : 'crews deployed'}</p>
-            <p style={DESC}>
-              {metrics.activeCrews > 0
-                ? <>You have <strong style={{ color: '#FFFFFF' }}>{metrics.activeCrews}</strong> crew{metrics.activeCrews !== 1 && 's'} in the field right now.</>
-                : <>No crews currently deployed.</>}
-              {metrics.pendingDispatch > 0
-                ? <> <strong style={{ color: '#FFFFFF' }}>{metrics.pendingDispatch}</strong> project{metrics.pendingDispatch !== 1 && 's'} waiting to be dispatched.</>
-                : <> All projects have been assigned.</>}
-            </p>
-          </div>
-
-          {/* ━━━ CARD 2: THE PM DESK ━━━ */}
-          <div
-            className="morning-brief-card"
-            style={{
-              ...CARD,
-              animation: `fadeUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) both${metrics.needsReview > 0 ? ', pulseReview 3s ease-in-out 1.5s infinite' : ''}`,
-              animationDelay: '0.2s',
-              ...(metrics.needsReview > 0 ? { borderColor: 'rgba(94, 92, 230, 0.3)' } : {}),
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={TITLE}>The PM Desk</span>
-                {metrics.needsReview > 0 && (
-                  <span style={{
-                    fontSize: '0.6rem', fontWeight: '700', color: '#5E5CE6',
-                    backgroundColor: 'rgba(94, 92, 230, 0.15)', padding: '3px 10px',
-                    borderRadius: '100px', letterSpacing: '0.04em', textTransform: 'uppercase',
-                  }}>
-                    Review Needed
-                  </span>
-                )}
-              </div>
-              <div style={{ ...ICON_RING, backgroundColor: 'rgba(94, 92, 230, 0.12)' }}>
-                <ClipboardCheck size={20} color="#5E5CE6" strokeWidth={2} />
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: '40px', marginBottom: '12px' }}>
-              <div>
-                <p style={METRIC}>{metrics.needsReview}</p>
-                <p style={SUBTITLE}>needs review</p>
-              </div>
-              <div>
-                <p style={METRIC}>{metrics.recentSyncs}</p>
-                <p style={SUBTITLE}>{metrics.recentSyncs === 1 ? 'field sync' : 'field syncs'}</p>
-              </div>
-            </div>
-            <p style={DESC}>
-              {metrics.needsReview > 0
-                ? <><strong style={{ color: '#FFFFFF' }}>{metrics.needsReview}</strong> project{metrics.needsReview !== 1 && 's'} {metrics.needsReview === 1 ? 'is' : 'are'} field-complete and waiting for your final review.</>
-                : <>Nothing pending your review.</>}
-              {metrics.recentSyncs > 0 && <> <strong style={{ color: '#FFFFFF' }}>{metrics.recentSyncs}</strong> active vault{metrics.recentSyncs !== 1 && 's'} synced recently.</>}
-            </p>
-          </div>
-
-          {/* ━━━ CARD 3: THE MATH ━━━ */}
-          <div
-            className="morning-brief-card"
-            style={{
-              ...CARD,
-              animation: `fadeUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) both${metrics.mathFlags > 0 ? ', pulseAlert 3s ease-in-out 1.5s infinite' : ''}`,
-              animationDelay: '0.3s',
-              ...(metrics.mathFlags > 0 ? { borderColor: 'rgba(255, 69, 58, 0.25)' } : {}),
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-              <span style={TITLE}>The Math</span>
-              <div style={{ ...ICON_RING, backgroundColor: metrics.mathFlags > 0 ? 'rgba(255, 69, 58, 0.12)' : 'rgba(255,255,255,0.06)' }}>
-                <AlertCircle size={20} color={metrics.mathFlags > 0 ? '#FF453A' : '#555'} strokeWidth={2} />
-              </div>
-            </div>
-            <p style={{ ...METRIC, color: metrics.mathFlags > 0 ? '#FF453A' : '#FFFFFF' }}>{metrics.mathFlags}</p>
-            <p style={SUBTITLE}>{metrics.mathFlags === 1 ? 'QA/QC flag' : 'QA/QC flags'}</p>
-            <p style={DESC}>
-              {metrics.mathFlags > 0
-                ? <>Harrison Math flagged <strong style={{ color: '#FFFFFF' }}>{metrics.mathFlags}</strong> point{metrics.mathFlags !== 1 && 's'} out of tolerance. Review the QA/QC log before approving fieldwork.</>
-                : <>All points within tolerance. No flags.</>}
-            </p>
-          </div>
-
-          {/* ━━━ CARD 4: THE MONEY ━━━ */}
-          <div
-            className="morning-brief-card"
-            style={{ ...CARD, animation: 'fadeUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) both', animationDelay: '0.4s' }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-              <span style={TITLE}>The Money</span>
-              <div style={{ ...ICON_RING, backgroundColor: 'rgba(50, 215, 75, 0.12)' }}>
-                <DollarSign size={20} color="#32D74B" strokeWidth={2} />
-              </div>
-            </div>
-            <p style={METRIC}>{metrics.readyToInvoice}</p>
-            <p style={SUBTITLE}>ready to invoice</p>
-            <p style={DESC}>
-              {metrics.readyToInvoice > 0
-                ? <><strong style={{ color: '#FFFFFF' }}>{metrics.readyToInvoice}</strong> project{metrics.readyToInvoice !== 1 && 's'} approved and ready to be pushed to Stripe for client billing.</>
-                : <>No projects ready for invoicing yet.</>}
-            </p>
-          </div>
-
+        {/* ─── AT-A-GLANCE STRIP ───────────────────── */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+          gap: '12px',
+          marginBottom: '32px',
+          animation: 'fadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.05s both',
+        }}>
+          <SummaryTile label="Deployed"    value={deployedCount}      suffix={`/ ${fieldCrews.length} crews`} accent={ACCENT.action} />
+          <SummaryTile label="Jobs today"  value={projectsToday.length} accent={ACCENT.today} />
+          <SummaryTile label="In queue"    value={holdingQueue.length}  accent={ACCENT.attention} muted={holdingQueue.length === 0} />
         </div>
 
-        {/* ══════════ HIDDEN CLIENT PORTAL TEST LINK ══════════ */}
-        <div style={{ animation: 'fadeUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) both', animationDelay: '0.5s', marginTop: '32px', textAlign: 'right' }}>
-          <a
-            href="/client"
-            style={{ fontSize: '0.65rem', color: '#2A2A2A', textDecoration: 'none', cursor: 'pointer' }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = '#555'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = '#2A2A2A'; }}
-          >
-            client preview
-          </a>
-        </div>
+        {/* ─── DEPLOYMENTS — the core of the brief ──── */}
+        <section style={{ marginBottom: '28px', animation: 'fadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both' }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            marginBottom: '14px',
+            fontSize: '0.68rem',
+            fontWeight: '700',
+            letterSpacing: '1.5px',
+            textTransform: 'uppercase',
+            color: 'var(--text-muted)',
+          }}>
+            <Users size={14} /> Deployments Today
+          </div>
 
-        {/* ══════════ CTA ══════════ */}
-        <div style={{ animation: 'fadeUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) both', animationDelay: '0.55s', marginTop: '48px' }}>
+          <div style={{
+            backgroundColor: SURFACE.panel,
+            border: `1px solid ${HAIRLINE}`,
+            borderRadius: '14px',
+            overflow: 'hidden',
+          }}>
+            {fieldCrews.length === 0 ? (
+              <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.88rem' }}>
+                No field crews on roster.
+              </div>
+            ) : (
+              fieldCrews.map((crew, i) => {
+                const jobs = deploymentsByCrew.get(crew.id) || [];
+                return (
+                  <CrewRow
+                    key={crew.id}
+                    crew={crew}
+                    jobs={jobs}
+                    isLast={i === fieldCrews.length - 1}
+                  />
+                );
+              })
+            )}
+          </div>
+        </section>
+
+        {/* ─── HOLDING QUEUE CALLOUT (only if non-empty) ─── */}
+        {holdingQueue.length > 0 && (
+          <section style={{
+            marginBottom: '32px',
+            padding: '16px 20px',
+            backgroundColor: 'var(--brand-amber-muted)',
+            border: `1px solid rgba(212, 145, 42, 0.35)`,
+            borderRadius: '14px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '16px',
+            animation: 'fadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both',
+          }}>
+            <div style={{
+              width: '40px', height: '40px', flexShrink: 0,
+              borderRadius: '12px',
+              backgroundColor: 'rgba(212, 145, 42, 0.18)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Inbox size={20} color={ACCENT.attention} strokeWidth={2} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: '0.95rem', fontWeight: '700', color: 'var(--text-main)', letterSpacing: '-0.01em' }}>
+                {holdingQueue.length} project{holdingQueue.length !== 1 ? 's' : ''} in the holding queue
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                Needs scheduling or crew assignment.
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* ─── PRIMARY CTA ─── */}
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '10px',
+          animation: 'fadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both',
+        }}>
+          <button
+            onClick={onGoToDispatch || onProceed}
+            style={{
+              width: '100%',
+              padding: '18px 28px',
+              borderRadius: '14px',
+              border: 'none',
+              backgroundColor: ACCENT.action,
+              color: 'var(--text-main)',
+              fontSize: '1.02rem',
+              fontWeight: '700',
+              letterSpacing: '-0.01em',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '12px',
+              fontFamily: FONT,
+              transition: 'transform 0.15s ease, background-color 0.15s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = 'var(--brand-teal-light)';
+              e.currentTarget.style.transform = 'translateY(-1px)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = ACCENT.action;
+              e.currentTarget.style.transform = 'translateY(0)';
+            }}
+          >
+            Open Dispatch Board
+            <ArrowRight size={18} strokeWidth={2.5} />
+          </button>
           <button
             onClick={onProceed}
             style={{
-              display: 'inline-flex', alignItems: 'center', gap: '12px',
-              backgroundColor: '#FFFFFF', color: '#000', border: 'none',
-              padding: '20px 48px', fontSize: '1.1rem', fontWeight: '700',
-              fontFamily: FONT, borderRadius: '980px', cursor: 'pointer',
+              width: '100%',
+              padding: '12px',
+              borderRadius: '12px',
+              border: `1px solid ${HAIRLINE}`,
+              backgroundColor: 'transparent',
+              color: 'var(--text-muted)',
+              fontSize: '0.85rem',
+              fontWeight: '600',
+              cursor: 'pointer',
+              fontFamily: FONT,
               letterSpacing: '-0.01em',
-              transition: 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
-              boxShadow: '0 6px 30px rgba(255, 255, 255, 0.08)',
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.02)'; e.currentTarget.style.boxShadow = '0 12px 48px rgba(255, 255, 255, 0.15)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 6px 30px rgba(255, 255, 255, 0.08)'; }}
           >
-            Open Command Center
-            <ArrowRight size={20} strokeWidth={2.5} />
+            Go to Command Center instead
           </button>
         </div>
-
       </div>
     </div>
   );
 }
 
-// ═══════════════════════════════════════════════════════════
-// DESIGN TOKENS
-// ═══════════════════════════════════════════════════════════
+// ─── Summary tile ──────────────────────────────────────
+function SummaryTile({ label, value, suffix, accent, muted = false }) {
+  return (
+    <div style={{
+      backgroundColor: SURFACE.panel,
+      border: `1px solid ${HAIRLINE}`,
+      borderRadius: '12px',
+      padding: '16px 18px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '6px',
+    }}>
+      <div style={{
+        fontSize: '0.62rem',
+        fontWeight: '700',
+        letterSpacing: '1.5px',
+        textTransform: 'uppercase',
+        color: 'var(--text-muted)',
+      }}>
+        {label}
+      </div>
+      <div style={{
+        display: 'flex',
+        alignItems: 'baseline',
+        gap: '8px',
+        minWidth: 0,
+      }}>
+        <div style={{
+          fontSize: '2.2rem',
+          fontWeight: '800',
+          letterSpacing: '-0.04em',
+          color: muted ? 'var(--text-muted)' : accent,
+          lineHeight: 1,
+          fontVariantNumeric: 'tabular-nums',
+        }}>
+          {value}
+        </div>
+        {suffix && (
+          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: '500' }}>
+            {suffix}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
-const FONT = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif";
+// ─── Crew row ──────────────────────────────────────────
+function CrewRow({ crew, jobs, isLast }) {
+  const initial = (crew.first_name || '?').charAt(0).toUpperCase();
+  const name = `${crew.first_name || ''} ${crew.last_name || ''}`.trim();
+  const role = (crew.role || '').replace('_', ' ');
+  const hasJobs = jobs.length > 0;
 
-const CARD = {
-  backgroundColor: '#141414',
-  borderRadius: '24px',
-  padding: '32px',
-  border: '1px solid rgba(255, 255, 255, 0.08)',
-};
+  return (
+    <div style={{
+      padding: '18px 20px',
+      display: 'flex',
+      gap: '14px',
+      alignItems: 'flex-start',
+      borderBottom: isLast ? 'none' : `1px solid ${HAIRLINE}`,
+    }}>
+      {/* Avatar */}
+      <div style={{
+        width: '42px',
+        height: '42px',
+        flexShrink: 0,
+        borderRadius: '50%',
+        backgroundColor: hasJobs ? 'rgba(26, 107, 107, 0.18)' : 'rgba(148, 163, 184, 0.12)',
+        color: hasJobs ? 'var(--brand-teal-light)' : 'var(--text-muted)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontWeight: '700',
+        fontSize: '1rem',
+        letterSpacing: '-0.01em',
+        border: hasJobs ? `1.5px solid rgba(26, 107, 107, 0.4)` : 'none',
+      }}>
+        {initial}
+      </div>
 
-const ICON_RING = {
-  width: '40px', height: '40px', borderRadius: '12px',
-  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-};
+      {/* Crew name + jobs */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', marginBottom: hasJobs ? '10px' : '2px' }}>
+          <div style={{
+            fontSize: '1rem',
+            fontWeight: '700',
+            color: 'var(--text-main)',
+            letterSpacing: '-0.01em',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}>
+            {name}
+          </div>
+          <div style={{
+            fontSize: '0.62rem',
+            fontWeight: '700',
+            letterSpacing: '1.2px',
+            textTransform: 'uppercase',
+            color: 'var(--text-muted)',
+            flexShrink: 0,
+          }}>
+            {role}
+          </div>
+        </div>
 
-const TITLE = {
-  fontSize: '0.78rem', fontWeight: '700', textTransform: 'uppercase',
-  letterSpacing: '0.1em', color: '#A1A1AA',
-};
+        {hasJobs ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {jobs.map(p => (
+              <JobLine key={p.id} project={p} />
+            ))}
+          </div>
+        ) : (
+          <div style={{
+            fontSize: '0.82rem',
+            color: 'var(--text-muted)',
+            fontStyle: 'italic',
+            marginTop: '4px',
+          }}>
+            No jobs scheduled
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
-const METRIC = {
-  fontSize: '3.5rem', fontWeight: '700', letterSpacing: '-0.05em',
-  color: '#FFFFFF', margin: '0 0 4px 0', lineHeight: 1,
-  fontVariantNumeric: 'tabular-nums',
-};
-
-const SUBTITLE = {
-  fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase',
-  letterSpacing: '0.1em', color: '#555', margin: '0 0 16px 0',
-};
-
-const DESC = {
-  fontSize: '0.92rem', lineHeight: 1.6, color: '#A1A1AA', margin: 0, fontWeight: '400',
-};
+// ─── Single job line inside a crew row ─────────────────
+function JobLine({ project }) {
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: '10px',
+      padding: '10px 12px',
+      backgroundColor: SURFACE.card,
+      border: `1px solid ${HAIRLINE}`,
+      borderRadius: '8px',
+      minWidth: 0,
+    }}>
+      <Calendar size={13} color="var(--text-muted)" style={{ flexShrink: 0 }} />
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{
+          fontSize: '0.88rem',
+          fontWeight: '600',
+          color: 'var(--text-main)',
+          letterSpacing: '-0.01em',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}>
+          {project.project_name}
+        </div>
+        {project.location && (
+          <div style={{
+            fontSize: '0.72rem',
+            color: 'var(--text-muted)',
+            marginTop: '2px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}>
+            <MapPin size={10} /> {project.location}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

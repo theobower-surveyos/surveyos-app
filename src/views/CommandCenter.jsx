@@ -115,7 +115,12 @@ export default function CommandCenter({ profile, projects, teamMembers, onProjec
 
       {/* HEADER */}
       <div style={{ padding: '30px', background: 'linear-gradient(135deg, var(--brand-teal) 0%, #062C2C 100%)', borderRadius: '16px', marginBottom: '40px', border: '1px solid var(--brand-teal-light)', boxShadow: '0 10px 30px rgba(0,0,0,0.2)' }}>
-        <h2 style={{ margin: 0, fontSize: '1.8em', letterSpacing: '-0.5px' }}>Good evening, {profile?.first_name || 'Operator'}.</h2>
+        <h2 style={{ margin: 0, fontSize: '1.8em', letterSpacing: '-0.5px' }}>
+          {(() => {
+            const h = new Date().getHours();
+            return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+          })()}, {profile?.first_name || 'Operator'}.
+        </h2>
         <p style={{ margin: '10px 0 0 0', color: 'rgba(255,255,255,0.7)', fontSize: '1em' }}>System Online. {projects?.length || 0} active projects in the network.</p>
       </div>
 
