@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { AlertCircle, MapPin, ChevronLeft, ChevronRight, X, FileText, User, CheckCircle2, Receipt, Navigation, Play, Camera } from 'lucide-react';
+import { AlertCircle, MapPin, ChevronLeft, ChevronRight, X, FileText, User, CheckCircle2, Receipt, Navigation, Play, Camera, ArrowLeft } from 'lucide-react';
 import {
   DndContext,
   PointerSensor,
@@ -1110,33 +1110,98 @@ function DispatchProjectDrawer({ project, crewLookup, equipmentList = [], equipm
         }}
       >
         {/* Header */}
-        <div style={{ padding: '24px 28px', borderBottom: `1px solid ${HAIRLINE}`, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px' }}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: '0.68rem', fontFamily: "'JetBrains Mono', 'SF Mono', monospace", fontWeight: '700', color: ACCENT.attention, letterSpacing: '0.1em', marginBottom: '10px' }}>
+        <div style={{ borderBottom: `1px solid ${HAIRLINE}`, flexShrink: 0 }}>
+          {/* Top nav bar — iOS-style prominent back button + save status + X */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '14px 18px 10px',
+            gap: '12px',
+          }}>
+            <button
+              onClick={handleClose}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: 'transparent',
+                border: 'none',
+                color: ACCENT.action,
+                fontSize: '1rem',
+                fontWeight: '600',
+                cursor: 'pointer',
+                padding: '8px 10px 8px 2px',
+                margin: 0,
+                fontFamily: FONT,
+                letterSpacing: '-0.01em',
+                minHeight: '44px',
+              }}
+              aria-label="Back"
+            >
+              <ArrowLeft size={22} strokeWidth={2.5} />
+              Back
+            </button>
+
+            {/* Save status chip — shows current state of the notes buffer */}
+            {(canEdit || canDoFieldWork) && (
+              <div
+                title={localNotes !== (project?.notes || '') ? 'Notes have unsaved changes' : 'All changes saved'}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  padding: '5px 10px',
+                  borderRadius: '999px',
+                  fontSize: '0.68rem',
+                  fontWeight: '700',
+                  letterSpacing: '0.5px',
+                  textTransform: 'uppercase',
+                  backgroundColor: localNotes !== (project?.notes || '')
+                    ? 'var(--brand-amber-muted)'
+                    : 'rgba(52, 199, 89, 0.12)',
+                  color: localNotes !== (project?.notes || '')
+                    ? ACCENT.attention
+                    : 'var(--success)',
+                  border: `1px solid ${localNotes !== (project?.notes || '') ? 'rgba(212, 145, 42, 0.35)' : 'rgba(52, 199, 89, 0.3)'}`,
+                  flexShrink: 0,
+                }}
+              >
+                {localNotes !== (project?.notes || '') ? 'Unsaved' : 'Saved'}
+              </div>
+            )}
+
+            <button
+              onClick={handleClose}
+              style={{
+                background: SURFACE.card,
+                border: `1px solid ${HAIRLINE}`,
+                borderRadius: '8px',
+                color: 'var(--text-muted)',
+                cursor: 'pointer',
+                padding: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                minWidth: '36px',
+                minHeight: '36px',
+              }}
+              aria-label="Close drawer"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          {/* Title block */}
+          <div style={{ padding: '0 28px 24px' }}>
+            <div style={{ fontSize: '0.68rem', fontFamily: "'JetBrains Mono', 'SF Mono', monospace", fontWeight: '700', color: ACCENT.attention, letterSpacing: '0.1em', marginBottom: '8px' }}>
               {project?.id ? project.id.slice(0, 8).toUpperCase() : ''}
             </div>
             <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: '700', lineHeight: '1.2', letterSpacing: '-0.02em', color: 'var(--text-main)' }}>
               {project?.project_name || 'Project'}
             </h2>
           </div>
-          <button
-            onClick={handleClose}
-            style={{
-              background: SURFACE.card,
-              border: `1px solid ${HAIRLINE}`,
-              borderRadius: '8px',
-              color: 'var(--text-muted)',
-              cursor: 'pointer',
-              padding: '8px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-            }}
-            aria-label="Close drawer"
-          >
-            <X size={18} />
-          </button>
         </div>
 
         {/* Body */}
@@ -1922,6 +1987,51 @@ function DispatchProjectDrawer({ project, crewLookup, equipmentList = [], equipm
             {invoiceState === 'error' && 'Retry'}
           </button>
         </div>
+        ) : canDoFieldWork ? (
+          /* Field crews get an explicit "Save & Close" footer button.
+             Notes already save on blur + on close, photos upload immediately,
+             and status toggles persist on tap — this button is the visible
+             confirmation that everything has been pushed and the drawer is
+             done. Tapping it flushes any pending notes save (via handleClose)
+             and dismisses the drawer. */
+          <div style={{ padding: '20px 28px', borderTop: `1px solid ${EDGE}`, backgroundColor: SURFACE.panel }}>
+            <button
+              onClick={handleClose}
+              style={{
+                width: '100%',
+                padding: '16px 18px',
+                borderRadius: '12px',
+                border: 'none',
+                backgroundColor: ACCENT.action,
+                color: 'var(--text-main)',
+                fontWeight: '700',
+                fontSize: '1rem',
+                letterSpacing: '-0.01em',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '10px',
+                fontFamily: FONT,
+                minHeight: '52px',
+                transition: 'background-color 150ms ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--brand-teal-light)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ACCENT.action; }}
+            >
+              <CheckCircle2 size={20} />
+              {localNotes !== (project?.notes || '') ? 'Save & Close' : 'Done'}
+            </button>
+            <div style={{
+              textAlign: 'center',
+              fontSize: '0.68rem',
+              color: 'var(--text-muted)',
+              marginTop: '8px',
+              letterSpacing: '0.02em',
+            }}>
+              Photos upload instantly · Notes save when you close
+            </div>
+          </div>
         ) : (
           <div style={{ padding: '16px 28px', borderTop: `1px solid ${EDGE}`, backgroundColor: SURFACE.panel, textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)', letterSpacing: '0.02em' }}>
             Read-only · contact a PM or admin to edit
