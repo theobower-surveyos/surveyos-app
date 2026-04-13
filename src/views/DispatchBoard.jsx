@@ -435,8 +435,17 @@ export default function DispatchBoard({ supabase, profile, projects = [], teamMe
         patch.assigned_crew = [crew.id];
       }
     } else if (dropData.type === 'queue') {
-      // Drag back to holding queue → unschedule (clear the whole span)
-      patch = { assigned_to: null, scheduled_date: null, scheduled_end_date: null };
+      // Drag back to holding queue → fully unschedule. Clearing assigned_crew
+      // too prevents the old lead from sticking around as a phantom
+      // "supporting" avatar on the queue card (the CrewAvatarStack filter
+      // excludes the leadId, but leadId is now null, so without this reset
+      // the old lead would render as supporting crew).
+      patch = {
+        assigned_to: null,
+        scheduled_date: null,
+        scheduled_end_date: null,
+        assigned_crew: [],
+      };
     } else {
       return;
     }
@@ -1326,6 +1335,7 @@ function DispatchProjectDrawer({ project, crewLookup, equipmentList = [], equipm
                       assigned_to: null,
                       scheduled_date: null,
                       scheduled_end_date: null,
+                      assigned_crew: [],
                     })}
                     style={{
                       padding: '10px 14px',
