@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { AlertCircle, MapPin, ChevronLeft, ChevronRight, X, FileText, User, CheckCircle2, Receipt } from 'lucide-react';
+import { AlertCircle, MapPin, ChevronLeft, ChevronRight, X, FileText, User, CheckCircle2, Receipt, Navigation, Play, Camera } from 'lucide-react';
 import {
   DndContext,
   PointerSensor,
@@ -487,6 +487,7 @@ export default function DispatchBoard({ supabase, profile, projects = [], teamMe
           equipmentOccupancy={equipmentOccupancy}
           allProjects={activeProjects}
           supabase={supabase}
+          profile={profile}
           canEdit={canEdit}
           isMobile={true}
           displayCrews={displayCrews}
@@ -840,6 +841,7 @@ export default function DispatchBoard({ supabase, profile, projects = [], teamMe
         equipmentOccupancy={equipmentOccupancy}
         allProjects={activeProjects}
         supabase={supabase}
+        profile={profile}
         canEdit={canEdit}
         onProjectUpdate={(id, patch) => {
           setLocalProjects(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p));
@@ -862,9 +864,95 @@ export default function DispatchBoard({ supabase, profile, projects = [], teamMe
 }
 
 // ══════════ DISPATCH PROJECT DRAWER ══════════
-function DispatchProjectDrawer({ project, crewLookup, equipmentList = [], equipmentOccupancy = null, allProjects = [], supabase, canEdit = false, isMobile = false, displayCrews = [], onProjectUpdate, onClose }) {
+function DispatchProjectDrawer({ project, crewLookup, equipmentList = [], equipmentOccupancy = null, allProjects = [], supabase, profile = null, canEdit = false, isMobile = false, displayCrews = [], onProjectUpdate, onClose }) {
   const [invoiceState, setInvoiceState] = React.useState('idle'); // idle | sending | sent | error
   const isOpen = !!project;
+
+  // ─── Field-crew role detection ────────────────────────────────
+  // Mutually exclusive with canEdit in practice: admins/PMs get the full
+  // desktop tooling; field crews get the in-field workflow below.
+  const FIELD_ROLES = ['field_crew', 'technician', 'party_chief'];
+  const profileRole = (profile?.role || '').toLowerCase().trim();
+  const isFieldUser = FIELD_ROLES.includes(profileRole);
+  const isAssignedToMe =
+    !!project && !!profile?.id && (
+      getCrewId(project) === profile.id ||
+      (Array.isArray(project.assigned_crew) && project.assigned_crew.includes(profile.id))
+    );
+  const canDoFieldWork = isFieldUser && isAssignedToMe;
+
+  // ─── Field-crew local state ───────────────────────────────────
+  const [photos, setPhotos] = React.useState([]);
+  const [uploading, setUploading] = React.useState(false);
+  const [localNotes, setLocalNotes] = React.useState('');
+  const fileInputRef = React.useRef(null);
+
+  // Mirror server notes into local state whenever the project changes.
+  React.useEffect(() => { setLocalNotes(project?.notes || ''); }, [project?.id, project?.notes]);
+
+  // Fetch photos from the existing `project-photos` bucket when the drawer
+  // opens. Mirrors the pattern in App.jsx fetchProjectPhotos.
+  const fetchPhotos = React.useCallback(async () => {
+    if (!supabase || !project?.id) return;
+    const { data, error } = await supabase.storage.from('project-photos').list(project.id);
+    if (error) { console.error('[Drawer] photo list error:', error); return; }
+    if (!data) return;
+    const valid = data.filter(f => f.name && f.name !== '.emptyFolderPlaceholder');
+    const withUrls = valid.map(f => ({
+      name: f.name,
+      url: supabase.storage.from('project-photos').getPublicUrl(`${project.id}/${f.name}`).data.publicUrl,
+    }));
+    setPhotos(withUrls);
+  }, [supabase, project?.id]);
+
+  React.useEffect(() => {
+    if (!isOpen) { setPhotos([]); return; }
+    fetchPhotos();
+  }, [isOpen, fetchPhotos]);
+
+  // Save-on-blur for notes, plus a final save on drawer close if dirty.
+  // (Covers the "user swiped the drawer shut before blur fired" case.)
+  const saveNotesIfDirty = () => {
+    if (!project) return;
+    if ((localNotes || '') === (project.notes || '')) return;
+    onProjectUpdate && onProjectUpdate(project.id, { notes: localNotes || null });
+  };
+  const handleClose = () => {
+    saveNotesIfDirty();
+    onClose && onClose();
+  };
+
+  // ─── Field actions ────────────────────────────────────────────
+  function openRoute() {
+    const dest = project?.address || project?.location;
+    if (!dest) return;
+    const url = `https://maps.apple.com/?daddr=${encodeURIComponent(dest)}`;
+    window.open(url, '_blank');
+  }
+  const startWork = () => project && onProjectUpdate(project.id, { status: 'in_progress' });
+  const markComplete = () => project && onProjectUpdate(project.id, { status: 'completed' });
+
+  async function handlePhotoCapture(e) {
+    const file = e.target.files?.[0];
+    if (!file || !project?.id || !supabase) return;
+    setUploading(true);
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const filename = `${Date.now()}_${safeName}`;
+    const { error } = await supabase.storage
+      .from('project-photos')
+      .upload(`${project.id}/${filename}`, file, {
+        contentType: file.type || 'image/jpeg',
+        upsert: false,
+      });
+    setUploading(false);
+    e.target.value = ''; // allow re-selecting the same file
+    if (error) {
+      console.error('[Drawer] photo upload error:', error);
+      alert(`Photo upload failed: ${error.message || 'unknown error'}`);
+      return;
+    }
+    fetchPhotos();
+  }
 
   // Reset invoice state when project changes
   React.useEffect(() => { setInvoiceState('idle'); }, [project?.id]);
@@ -989,7 +1077,7 @@ function DispatchProjectDrawer({ project, crewLookup, equipmentList = [], equipm
     <>
       {/* Backdrop */}
       <div
-        onClick={onClose}
+        onClick={handleClose}
         style={{
           position: 'fixed', inset: 0,
           backgroundColor: 'rgba(0,0,0,0.6)',
@@ -1030,7 +1118,7 @@ function DispatchProjectDrawer({ project, crewLookup, equipmentList = [], equipm
             </h2>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             style={{
               background: SURFACE.card,
               border: `1px solid ${HAIRLINE}`,
@@ -1051,6 +1139,111 @@ function DispatchProjectDrawer({ project, crewLookup, equipmentList = [], equipm
 
         {/* Body */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+
+          {/* Field Actions — top of drawer for field crews assigned to this project */}
+          {canDoFieldWork && (
+            <DrawerSection title="Field Actions" icon={<Play size={14} />}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {/* Route to Site */}
+                <button
+                  onClick={openRoute}
+                  disabled={!(project?.address || project?.location)}
+                  style={{
+                    width: '100%',
+                    padding: '14px 18px',
+                    borderRadius: '10px',
+                    border: 'none',
+                    backgroundColor: (project?.address || project?.location) ? ACCENT.action : SURFACE.card,
+                    color: (project?.address || project?.location) ? 'var(--text-main)' : 'var(--text-muted)',
+                    fontWeight: '700',
+                    fontSize: '0.95rem',
+                    letterSpacing: '-0.01em',
+                    cursor: (project?.address || project?.location) ? 'pointer' : 'not-allowed',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '10px',
+                    fontFamily: FONT,
+                  }}
+                >
+                  <Navigation size={18} />
+                  Route to Site
+                </button>
+
+                {/* Start Work / Mark Complete — state-driven */}
+                {project?.status === 'completed' ? (
+                  <div
+                    style={{
+                      width: '100%',
+                      padding: '14px 18px',
+                      borderRadius: '10px',
+                      border: `1px solid ${HAIRLINE}`,
+                      backgroundColor: SURFACE.card,
+                      color: 'var(--success)',
+                      fontWeight: '700',
+                      fontSize: '0.92rem',
+                      letterSpacing: '-0.01em',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '10px',
+                    }}
+                  >
+                    <CheckCircle2 size={18} />
+                    Completed
+                  </div>
+                ) : project?.status === 'in_progress' ? (
+                  <button
+                    onClick={markComplete}
+                    style={{
+                      width: '100%',
+                      padding: '14px 18px',
+                      borderRadius: '10px',
+                      border: 'none',
+                      backgroundColor: 'var(--success)',
+                      color: 'var(--text-main)',
+                      fontWeight: '700',
+                      fontSize: '0.95rem',
+                      letterSpacing: '-0.01em',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '10px',
+                      fontFamily: FONT,
+                    }}
+                  >
+                    <CheckCircle2 size={18} />
+                    Mark Complete
+                  </button>
+                ) : (
+                  <button
+                    onClick={startWork}
+                    style={{
+                      width: '100%',
+                      padding: '14px 18px',
+                      borderRadius: '10px',
+                      border: 'none',
+                      backgroundColor: ACCENT.action,
+                      color: 'var(--text-main)',
+                      fontWeight: '700',
+                      fontSize: '0.95rem',
+                      letterSpacing: '-0.01em',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '10px',
+                      fontFamily: FONT,
+                    }}
+                  >
+                    <Play size={18} />
+                    Start Work
+                  </button>
+                )}
+              </div>
+            </DrawerSection>
+          )}
 
           {/* Status stat — single tile, Crew moves to its own section below */}
           <DrawerStat
@@ -1550,9 +1743,31 @@ function DispatchProjectDrawer({ project, crewLookup, equipmentList = [], equipm
             )}
           </DrawerSection>
 
-          {/* Notes */}
+          {/* Notes — editable for field crews + editors, read-only otherwise */}
           <DrawerSection title="Notes" icon={<FileText size={14} />}>
-            {project?.notes ? (
+            {(canEdit || canDoFieldWork) ? (
+              <textarea
+                value={localNotes}
+                onChange={(e) => setLocalNotes(e.target.value)}
+                onBlur={saveNotesIfDirty}
+                placeholder="Field notes, observations, monument recoveries, client comments…"
+                rows={5}
+                style={{
+                  width: '100%',
+                  padding: '14px 16px',
+                  borderRadius: '8px',
+                  backgroundColor: SURFACE.card,
+                  border: `1px solid ${HAIRLINE}`,
+                  fontSize: '0.85rem',
+                  lineHeight: '1.55',
+                  color: 'var(--text-main)',
+                  fontFamily: FONT,
+                  resize: 'vertical',
+                  boxSizing: 'border-box',
+                  outline: 'none',
+                }}
+              />
+            ) : project?.notes ? (
               <div style={{
                 padding: '14px 16px',
                 borderRadius: '8px',
@@ -1569,6 +1784,97 @@ function DispatchProjectDrawer({ project, crewLookup, equipmentList = [], equipm
               <DrawerEmpty>No notes attached.</DrawerEmpty>
             )}
           </DrawerSection>
+
+          {/* Photos — visible to field crews + editors. Camera capture on iOS via capture="environment". */}
+          {(canEdit || canDoFieldWork) && (
+            <DrawerSection title="Photos" icon={<Camera size={14} />}>
+              <div style={{
+                padding: '14px 16px',
+                borderRadius: '8px',
+                backgroundColor: SURFACE.card,
+                border: `1px solid ${HAIRLINE}`,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+              }}>
+                {canDoFieldWork && (
+                  <>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      style={{ display: 'none' }}
+                      onChange={handlePhotoCapture}
+                    />
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploading}
+                      style={{
+                        width: '100%',
+                        padding: '12px 16px',
+                        borderRadius: '8px',
+                        border: `1px solid ${HAIRLINE}`,
+                        backgroundColor: uploading ? SURFACE.card : ACCENT.action,
+                        color: 'var(--text-main)',
+                        fontWeight: '700',
+                        fontSize: '0.88rem',
+                        letterSpacing: '-0.01em',
+                        cursor: uploading ? 'wait' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '10px',
+                        fontFamily: FONT,
+                        opacity: uploading ? 0.7 : 1,
+                      }}
+                    >
+                      <Camera size={16} />
+                      {uploading ? 'Uploading…' : 'Take Photo'}
+                    </button>
+                  </>
+                )}
+
+                {photos.length > 0 ? (
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(3, 1fr)',
+                    gap: '6px',
+                    maxHeight: '240px',
+                    overflowY: 'auto',
+                  }}>
+                    {photos.map(p => (
+                      <a
+                        key={p.name}
+                        href={p.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          aspectRatio: '1',
+                          overflow: 'hidden',
+                          borderRadius: '6px',
+                          border: `1px solid ${HAIRLINE}`,
+                          display: 'block',
+                        }}
+                      >
+                        <img
+                          src={p.url}
+                          alt=""
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                        />
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontStyle: 'italic', textAlign: 'center', padding: '8px 0' }}>
+                    {canDoFieldWork
+                      ? 'No photos yet — tap Take Photo to capture the first one.'
+                      : 'No photos yet.'}
+                  </div>
+                )}
+              </div>
+            </DrawerSection>
+          )}
         </div>
 
         {/* Footer — Tier 1 (sits WITH the drawer body, not below it) */}
