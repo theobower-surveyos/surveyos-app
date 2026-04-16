@@ -102,7 +102,11 @@ export default function App() {
       });
       const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
         setSession(session);
-        if (session) fetchDashboardData(session.user.id);
+        if (session) {
+          fetchDashboardData(session.user.id);
+          setWelcomeSeen(false);   // reset so welcome shows on every fresh login
+          setHasReadBrief(false);  // reset so morning brief shows after welcome
+        }
         else { setProfile(null); setProjects([]); setSelectedProject(null); setLoading(false); }
       });
       return () => subscription.unsubscribe();
