@@ -267,7 +267,7 @@ export default function App() {
 
   // Welcome screen — temporary, gated to Lukas only. Shows every login.
   // Flow: Welcome → Morning Brief → Command Center. Remove by deleting this block.
-  if (['Lukas', 'Drew'].includes(profile.first_name) && !welcomeSeen) {
+  if (['Lukas', 'Drew', 'Bby Monkey'].includes(profile.first_name) && !welcomeSeen) {
     return (
       <WelcomeScreen
         name={profile.first_name}
@@ -292,7 +292,7 @@ export default function App() {
         onGoToDispatch={() => {
           setHasReadBrief(true);
           // Lukas + Drew: Welcome → Morning Brief → Command Center (not Dispatch)
-          navigate(['Lukas', 'Drew'].includes(profile.first_name) ? '/' : '/dispatch');
+          navigate(['Lukas', 'Drew', 'Bby Monkey'].includes(profile.first_name) ? '/' : '/dispatch');
         }}
       />
     </ErrorBoundary>
