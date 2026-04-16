@@ -17,6 +17,7 @@ import FieldLogs from './views/FieldLogs'
 import ProfitAnalytics from './views/ProfitAnalytics'
 import LiveView from './views/LiveView';
 import MobileCrewView from './views/MobileCrewView';
+import WelcomeScreen from './components/WelcomeScreen';
 
 class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { hasError: false, error: null }; }
@@ -48,6 +49,9 @@ export default function App() {
   const [selectedProject, setSelectedProject] = useState(null);
   const [surveyPoints, setSurveyPoints] = useState([]);
   const [hasReadBrief, setHasReadBrief] = useState(false);
+  const [welcomeSeen, setWelcomeSeen] = useState(
+    () => typeof sessionStorage !== 'undefined' && sessionStorage.getItem('surveyos_welcome_seen') === 'true'
+  );
   
   // Mobile Menu State
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -257,6 +261,20 @@ export default function App() {
   if (shareId) return <ClientPortal project={clientProject} points={clientPoints} photos={projectPhotos} />;
   if (!session) return <Auth />;
   if (!profile) return <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-dark)', color: 'var(--text-muted)' }}>Loading SurveyOS...</div>;
+
+  // Welcome screen — temporary, gated to Lukas only. Shows once per
+  // browser session (sessionStorage flag). Remove by deleting this block.
+  if (profile.first_name === 'Lukas' && !welcomeSeen) {
+    return (
+      <WelcomeScreen
+        name={profile.first_name}
+        onEnter={() => {
+          sessionStorage.setItem('surveyos_welcome_seen', 'true');
+          setWelcomeSeen(true);
+        }}
+      />
+    );
+  }
 
   const isOfficeUser = !['field_crew', 'technician', 'cad', 'drafter'].includes((profile.role || '').toLowerCase().trim());
   if (isOfficeUser && !hasReadBrief) return (
