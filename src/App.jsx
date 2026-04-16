@@ -49,9 +49,8 @@ export default function App() {
   const [selectedProject, setSelectedProject] = useState(null);
   const [surveyPoints, setSurveyPoints] = useState([]);
   const [hasReadBrief, setHasReadBrief] = useState(false);
-  const [welcomeSeen, setWelcomeSeen] = useState(
-    () => typeof sessionStorage !== 'undefined' && sessionStorage.getItem('surveyos_welcome_seen') === 'true'
-  );
+  // Lukas welcome: shows every login, no persistence.
+  const [welcomeSeen, setWelcomeSeen] = useState(false);
   
   // Mobile Menu State
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -262,15 +261,15 @@ export default function App() {
   if (!session) return <Auth />;
   if (!profile) return <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-dark)', color: 'var(--text-muted)' }}>Loading SurveyOS...</div>;
 
-  // Welcome screen — temporary, gated to Lukas only. Shows once per
-  // browser session (sessionStorage flag). Remove by deleting this block.
+  // Welcome screen — temporary, gated to Lukas only. Shows every login.
+  // Flow: Welcome → Morning Brief → Command Center. Remove by deleting this block.
   if (profile.first_name === 'Lukas' && !welcomeSeen) {
     return (
       <WelcomeScreen
         name={profile.first_name}
         onEnter={() => {
-          sessionStorage.setItem('surveyos_welcome_seen', 'true');
           setWelcomeSeen(true);
+          setHasReadBrief(false); // ensure Morning Brief shows next
         }}
       />
     );
@@ -286,7 +285,11 @@ export default function App() {
         supabase={supabase}
         onProjectUpdate={handleProjectUpdate}
         onProceed={() => setHasReadBrief(true)}
-        onGoToDispatch={() => { setHasReadBrief(true); navigate('/dispatch'); }}
+        onGoToDispatch={() => {
+          setHasReadBrief(true);
+          // Lukas's flow: Welcome → Morning Brief → Command Center (not Dispatch)
+          navigate(profile.first_name === 'Lukas' ? '/' : '/dispatch');
+        }}
       />
     </ErrorBoundary>
   );
