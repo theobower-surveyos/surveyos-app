@@ -291,8 +291,8 @@ export default function App() {
         onProceed={() => setHasReadBrief(true)}
         onGoToDispatch={() => {
           setHasReadBrief(true);
-          // Lukas's flow: Welcome → Morning Brief → Command Center (not Dispatch)
-          navigate(profile.first_name === 'Lukas' ? '/' : '/dispatch');
+          // Lukas + Drew: Welcome → Morning Brief → Command Center (not Dispatch)
+          navigate(['Lukas', 'Drew'].includes(profile.first_name) ? '/' : '/dispatch');
         }}
       />
     </ErrorBoundary>
