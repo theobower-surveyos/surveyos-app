@@ -1,14 +1,8 @@
 const FONT = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif";
 
 export default function WelcomeScreen({ name, onEnter }) {
-  // Auto-advance after 8 seconds if the user doesn't tap
-  const timerRef = { current: null };
-  if (typeof window !== 'undefined') {
-    timerRef.current = setTimeout(() => onEnter && onEnter(), 8000);
-  }
-
+  // No auto-advance — Lukas taps "Enter" when he's ready.
   const handleEnter = () => {
-    if (timerRef.current) clearTimeout(timerRef.current);
     onEnter && onEnter();
   };
 
@@ -21,9 +15,6 @@ export default function WelcomeScreen({ name, onEnter }) {
 
   return (
     <div
-      onClick={handleEnter}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleEnter(); }}
-      tabIndex={0}
       style={{
         position: 'fixed',
         inset: 0,
@@ -34,7 +25,6 @@ export default function WelcomeScreen({ name, onEnter }) {
         alignItems: 'center',
         justifyContent: 'center',
         fontFamily: FONT,
-        cursor: 'pointer',
         overflow: 'hidden',
       }}
     >
