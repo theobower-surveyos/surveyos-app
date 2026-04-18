@@ -17,6 +17,7 @@ import FieldLogs from './views/FieldLogs'
 import ProfitAnalytics from './views/ProfitAnalytics'
 import LiveView from './views/LiveView';
 import MobileCrewView from './views/MobileCrewView';
+import Stakeout from './views/Stakeout';
 import WelcomeScreen from './components/WelcomeScreen';
 
 class ErrorBoundary extends Component {
@@ -511,6 +512,11 @@ export default function App() {
             } />
             <Route path="/project/:id" element={<LiveView />} />
             <Route path="/crew" element={<MobileCrewView />} />
+            <Route path="/stakeout" element={
+              ['owner', 'admin', 'pm'].includes((profile?.role || '').toLowerCase().trim())
+                ? <Stakeout supabase={supabase} profile={profile} projects={projects} />
+                : <Navigate to="/dispatch" replace />
+            } />
             <Route path="*" element={<div style={{ color: 'var(--text-muted)', padding: '40px', textAlign: 'center' }}><h2>404 — Route Not Found</h2><button onClick={() => navigate('/')} style={{ marginTop: '16px', padding: '10px 24px', backgroundColor: 'var(--brand-teal)', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}>Back to Command Center</button></div>} />
           </Routes>
         </div>
