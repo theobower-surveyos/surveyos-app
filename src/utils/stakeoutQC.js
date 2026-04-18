@@ -333,15 +333,22 @@ export async function parseJXLPoints(file) {
 
 /**
  * Computes horizontal QC deltas for an observation against its design point.
- * Only distinguishes in_tol / out_of_tol — field_fit / built_on / pending
- * are user-applied states, not computed here.
+ * Only distinguishes in_tol / out_of_tol for horizontals — field_fit /
+ * built_on / pending are user-applied states, not computed here. Every shot
+ * captures elevation data (delta_z), but crews do not routinely re-check
+ * their own vertical in the field, so vertical pass/fail evaluation
+ * requires check-shot data that Phase 1 does not yet ingest — v_status is
+ * therefore always returned as null in Phase 1, regardless of stake type
+ * or delta_z magnitude. For offset stakes the captured delta_z represents
+ * cut/fill communicated to the contractor rather than a gradable target.
  *
  * @param {{
  *   design: { n: number, e: number, z: number | null },
  *   observed: { n: number, e: number, z: number | null },
  *   declared_offset_distance: number | null,
  *   declared_offset_direction: 'N'|'S'|'E'|'W' | null,
- *   tolerance_h: number
+ *   tolerance_h: number,
+ *   tolerance_v?: number
  * }} params
  * @returns {{
  *   delta_n: number,
@@ -351,11 +358,19 @@ export async function parseJXLPoints(file) {
  *   actual_offset_distance: number,
  *   actual_offset_direction: 'N'|'S'|'E'|'W' | null,
  *   offset_variance: number | null,
- *   h_status: 'in_tol' | 'out_of_tol'
+ *   h_status: 'in_tol' | 'out_of_tol',
+ *   v_status: null
  * }}
  */
 export function computeQC(params) {
-    const { design, observed, declared_offset_distance, tolerance_h } = params;
+    const {
+        design,
+        observed,
+        declared_offset_distance,
+        tolerance_h,
+        // eslint-disable-next-line no-unused-vars
+        tolerance_v = 0.030,
+    } = params;
 
     const delta_n_raw = observed.n - design.n;
     const delta_e_raw = observed.e - design.e;
@@ -396,6 +411,8 @@ export function computeQC(params) {
         actual_offset_direction,
         offset_variance,
         h_status,
+        // v_status is null in Phase 1 — check-shot workflow deferred.
+        v_status: null,
     };
 }
 

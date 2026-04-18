@@ -351,6 +351,69 @@ describe('computeQC', () => {
     });
 });
 
+// ─── computeQC vertical behavior ────────────────────────────────────────────
+
+describe('computeQC vertical behavior', () => {
+    it('v_status is null for on-location stakes', () => {
+        const r = computeQC({
+            design: { n: 10000, e: 5000, z: 100 },
+            observed: { n: 10000.005, e: 5000.005, z: 100.250 },
+            declared_offset_distance: null,
+            declared_offset_direction: null,
+            tolerance_h: 0.06,
+            tolerance_v: 0.030,
+        });
+        expect(r.v_status).toBeNull();
+        // h_status still computed from horizontal deltas
+        expect(r.h_status).toBe('in_tol');
+    });
+
+    it('v_status is null for offset stakes', () => {
+        const r = computeQC({
+            design: { n: 10000, e: 5000, z: 100 },
+            observed: { n: 10002.003, e: 5000, z: 101.5 },
+            declared_offset_distance: 2,
+            declared_offset_direction: 'N',
+            tolerance_h: 0.06,
+            tolerance_v: 0.030,
+        });
+        expect(r.v_status).toBeNull();
+    });
+
+    it('delta_z is informational on offset stakes (cut/fill stored, not graded)', () => {
+        const r = computeQC({
+            design: { n: 10000, e: 5000, z: 100 },
+            observed: { n: 10002, e: 5000, z: 102.5 },
+            declared_offset_distance: 2,
+            declared_offset_direction: 'N',
+            tolerance_h: 0.06,
+            tolerance_v: 0.030,
+        });
+        expect(r.delta_z).toBe(2.5);
+        expect(r.v_status).toBeNull();
+    });
+
+    it('tolerance_v defaults to 0.030 when not provided', () => {
+        expect(() =>
+            computeQC({
+                design: { n: 10000, e: 5000, z: 100 },
+                observed: { n: 10000, e: 5000, z: 100.05 },
+                declared_offset_distance: null,
+                declared_offset_direction: null,
+                tolerance_h: 0.06,
+            }),
+        ).not.toThrow();
+        const r = computeQC({
+            design: { n: 10000, e: 5000, z: 100 },
+            observed: { n: 10000, e: 5000, z: 100.05 },
+            declared_offset_distance: null,
+            declared_offset_direction: null,
+            tolerance_h: 0.06,
+        });
+        expect(r.v_status).toBeNull();
+    });
+});
+
 // ─── matchObservationsToDesign ───────────────────────────────────────────────
 
 describe('matchObservationsToDesign', () => {
