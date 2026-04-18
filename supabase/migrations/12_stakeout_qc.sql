@@ -664,7 +664,7 @@ CREATE POLICY "Field roles read own assignments"
               AND public.get_my_role() IN ('party_chief','field_crew','cad','drafter','technician')
               AND (
                   stakeout_assignments.party_chief_id = auth.uid()
-                  OR (p.assigned_to->>'id')::text = auth.uid()::text
+                  OR p.assigned_to = auth.uid()
                   OR (p.assigned_crew IS NOT NULL AND auth.uid() = ANY(p.assigned_crew))
               )
         )
@@ -708,7 +708,7 @@ CREATE POLICY "Firm members read assignment points"
               AND (
                   public.get_my_role() IN ('owner','admin','pm')
                   OR a.party_chief_id = auth.uid()
-                  OR (p.assigned_to->>'id')::text = auth.uid()::text
+                  OR p.assigned_to = auth.uid()
                   OR (p.assigned_crew IS NOT NULL AND auth.uid() = ANY(p.assigned_crew))
               )
         )
@@ -754,7 +754,7 @@ CREATE POLICY "Firm members read qc runs"
                   public.get_my_role() IN ('owner','admin','pm')
                   OR stakeout_qc_runs.party_chief_id = auth.uid()
                   OR a.party_chief_id = auth.uid()
-                  OR (p.assigned_to->>'id')::text = auth.uid()::text
+                  OR p.assigned_to = auth.uid()
                   OR (p.assigned_crew IS NOT NULL AND auth.uid() = ANY(p.assigned_crew))
               )
         )
@@ -824,7 +824,7 @@ CREATE POLICY "Firm members read qc points"
               AND (
                   public.get_my_role() IN ('owner','admin','pm')
                   OR a.party_chief_id = auth.uid()
-                  OR (p.assigned_to->>'id')::text = auth.uid()::text
+                  OR p.assigned_to = auth.uid()
                   OR (p.assigned_crew IS NOT NULL AND auth.uid() = ANY(p.assigned_crew))
               )
         )
