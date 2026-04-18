@@ -51,11 +51,12 @@ export default function App() {
   const [hasReadBrief, setHasReadBrief] = useState(false);
   // Lukas welcome: shows every login, no persistence.
   const [welcomeSeen, setWelcomeSeen] = useState(false);
-  
+
   // Mobile Menu State
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const [loading, setLoading] = useState(true);
+  const [accessRevoked, setAccessRevoked] = useState(false);
   const [clientProject, setClientProject] = useState(null);
   const [clientPoints, setClientPoints] = useState([]);
   const [projectPhotos, setProjectPhotos] = useState([]);
@@ -72,11 +73,38 @@ export default function App() {
     if (!userId) { setLoading(false); return; }
     let profileLoaded = false;
     try {
-      const { data: profileData } = await supabase.from('user_profiles').select('id, role, first_name, last_name, firm_id').eq('id', userId).single();
+      // ─── ACCESS GATE ────────────────────────────────────────────
+      // Pull is_active alongside the rest of the profile. If the user
+      // has been deactivated (is_active=false), sign them out immediately
+      // and short-circuit before any dashboard state populates. This runs
+      // on every login AND every session restore (page refresh / new tab),
+      // so flipping is_active=false in Supabase locks them out within one
+      // page load.
+      const { data: profileData } = await supabase
+        .from('user_profiles')
+        .select('id, role, first_name, last_name, firm_id, is_active')
+        .eq('id', userId)
+        .single();
+
+      if (profileData && profileData.is_active === false) {
+        console.warn('[Access] user is deactivated — signing out', userId);
+        setAccessRevoked(true);
+        await supabase.auth.signOut();
+        setLoading(false);
+        return;
+      }
+
       if (profileData) {
         setProfile(profileData);
         profileLoaded = true;
-        const { data: teamData } = await supabase.from('user_profiles').select('*').eq('firm_id', profileData.firm_id);
+        // Roster only shows active teammates — deactivated users disappear
+        // from assignment dropdowns, dispatch board, etc. without breaking
+        // historical records (their UUID still resolves on past projects).
+        const { data: teamData } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('firm_id', profileData.firm_id)
+          .eq('is_active', true);
         if (teamData) setTeamMembers(teamData);
       }
       const { data: projectsData } = await supabase.from('projects').select('*').neq('status', 'archived').order('created_at', { ascending: false });
@@ -103,6 +131,7 @@ export default function App() {
       const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
         setSession(session);
         if (session) {
+          setAccessRevoked(false); // reset on any new sign-in attempt
           fetchDashboardData(session.user.id);
           setWelcomeSeen(false);   // reset so welcome shows on every fresh login
           setHasReadBrief(false);  // reset so morning brief shows after welcome
@@ -127,6 +156,27 @@ export default function App() {
       return () => { supabase.removeChannel(pointsChannel); supabase.removeChannel(projectChannel); }
     }
   }, [selectedProject?.id, shareId]);
+
+  // ─── Live deactivation listener ──────────────────────────────
+  // If an Owner/PM flips is_active=false on a user who is CURRENTLY logged
+  // in, this fires within ~1s and kicks them out. Without this they'd stay
+  // in until their next page load. Requires the same Realtime publication
+  // setup as projects (see comment block below).
+  useEffect(() => {
+    if (!profile?.id || shareId) return;
+    const channel = supabase.channel('self-profile-' + profile.id)
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'user_profiles', filter: `id=eq.${profile.id}` },
+        async (payload) => {
+          if (payload.new?.is_active === false) {
+            console.warn('[Access] live deactivation detected — signing out');
+            setAccessRevoked(true);
+            await supabase.auth.signOut();
+          }
+        })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [profile?.id, shareId]);
 
   // ─── Firm-wide projects realtime ─────────────────────────────
   // This is the sync loop that makes "PM dispatches → Party Chief's phone
@@ -262,6 +312,27 @@ export default function App() {
 
   if (window.location.pathname === '/client') return <ClientPortal project={clientProject || { project_name: 'Client Portal', status: 'active' }} points={clientPoints || []} photos={projectPhotos || []} />;
   if (shareId) return <ClientPortal project={clientProject} points={clientPoints} photos={projectPhotos} />;
+
+  // ─── Access Revoked Screen ───────────────────────────────────
+  // Shown when fetchDashboardData detects is_active=false. Replaces
+  // the normal Auth screen so the user sees a clear explanation
+  // instead of the login form (which would just let them log back in
+  // and immediately get kicked again — confusing UX).
+  if (accessRevoked) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-dark)', color: 'var(--text-main)', fontFamily: 'Inter, sans-serif', padding: '20px', textAlign: 'center' }}>
+        <div style={{ width: '64px', height: '64px', borderRadius: '50%', backgroundColor: 'rgba(255, 69, 58, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px', border: '1px solid rgba(255, 69, 58, 0.3)' }}>
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#FF453A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
+        </div>
+        <h1 style={{ fontSize: '1.8em', margin: '0 0 12px 0', fontWeight: '700' }}>Access Revoked</h1>
+        <p style={{ color: 'var(--text-muted)', maxWidth: '400px', lineHeight: '1.6', margin: '0 0 32px 0' }}>
+          Your SurveyOS access has been deactivated. Please contact your firm administrator to restore access.
+        </p>
+        <button onClick={() => { setAccessRevoked(false); window.location.reload(); }} style={{ padding: '12px 32px', backgroundColor: 'var(--brand-teal)', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '1em' }}>Return to Sign In</button>
+      </div>
+    );
+  }
+
   if (!session) return <Auth />;
   if (!profile) return <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-dark)', color: 'var(--text-muted)' }}>Loading SurveyOS...</div>;
 
