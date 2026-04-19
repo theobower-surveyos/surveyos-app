@@ -32,7 +32,7 @@ function defaultForm() {
     };
 }
 
-export default function AssignmentBuilder({ supabase, profile, projectId, onToast }) {
+export default function AssignmentBuilder({ supabase, profile, projectId, onToast, onSaved }) {
     const [designPoints, setDesignPoints] = useState([]);
     const [partyChiefs, setPartyChiefs] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -190,6 +190,7 @@ export default function AssignmentBuilder({ supabase, profile, projectId, onToas
         }
         resetAfterSave();
         setSaveInProgress(false);
+        if (typeof onSaved === 'function') onSaved();
     }
 
     // ── Render ────────────────────────────────────────────────────

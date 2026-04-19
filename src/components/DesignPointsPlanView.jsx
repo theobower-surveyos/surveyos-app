@@ -11,6 +11,33 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 const DRAG_THRESHOLD_PX = 3;
 const GRID_STEP_FT = 50;
 
+// Status-driven point styling used by AssignmentDetail. When
+// pointStatusMap is passed, this overrides the default teal color —
+// selection (amber) still trumps status.
+const STATUS_STYLES = {
+    in_tol:     { fill: 'var(--success)',         radiusMul: 1.0 },
+    out_of_tol: { fill: 'var(--error)',           radiusMul: 1.3 },
+    field_fit:  { fill: 'var(--brand-amber)',     radiusMul: 1.2 },
+    built_on:   { fill: 'rgba(201, 116, 242, 1)', radiusMul: 1.2 },
+    pending:    { fill: 'var(--brand-teal)',      radiusMul: 1.0 },
+};
+
+const STATUS_LABELS = {
+    in_tol: 'In tolerance',
+    out_of_tol: 'Out of tolerance',
+    field_fit: 'Field fit',
+    built_on: 'Built on',
+    pending: 'Pending',
+};
+
+const STATUS_COLORS = {
+    in_tol: 'var(--success)',
+    out_of_tol: 'var(--error)',
+    field_fit: 'var(--brand-amber)',
+    built_on: 'rgba(201, 116, 242, 1)',
+    pending: 'var(--text-muted)',
+};
+
 function toSvgCoords(svgEl, clientX, clientY) {
     if (!svgEl || !svgEl.getScreenCTM) return null;
     const ctm = svgEl.getScreenCTM();
@@ -27,6 +54,8 @@ export default function DesignPointsPlanView({
     onSelectionChange,
     hoveredId,
     onHoverChange,
+    pointStatusMap,
+    extraPointData,
 }) {
     const svgRef = useRef(null);
     const containerRef = useRef(null);
@@ -286,16 +315,23 @@ export default function DesignPointsPlanView({
                         if (typeof p.northing !== 'number' || typeof p.easting !== 'number') return null;
                         const isSelected = selectedIds && selectedIds.has(p.id);
                         const isHovered = hoveredId === p.id;
-                        const r = isSelected
-                            ? selectedRadius
-                            : isHovered
-                                ? hoverRadius
-                                : baseRadius;
-                        const fill = isSelected
-                            ? 'var(--brand-amber)'
-                            : isHovered
-                                ? 'var(--brand-teal-light)'
-                                : 'var(--brand-teal)';
+                        const statusKey = pointStatusMap ? pointStatusMap.get(p.id) : null;
+                        const statusStyle = statusKey ? STATUS_STYLES[statusKey] : null;
+
+                        let fill;
+                        let r;
+                        if (isSelected) {
+                            // Amber selection trumps status — preserves lasso UX.
+                            fill = 'var(--brand-amber)';
+                            r = selectedRadius;
+                        } else if (statusStyle) {
+                            fill = statusStyle.fill;
+                            const statusR = baseRadius * statusStyle.radiusMul;
+                            r = isHovered ? Math.max(hoverRadius, statusR) : statusR;
+                        } else {
+                            fill = isHovered ? 'var(--brand-teal-light)' : 'var(--brand-teal)';
+                            r = isHovered ? hoverRadius : baseRadius;
+                        }
                         return (
                             <circle
                                 key={p.id}
@@ -382,13 +418,19 @@ export default function DesignPointsPlanView({
 
             {/* Tooltip */}
             {hoveredPoint && cursor && containerRef.current && (
-                <Tooltip point={hoveredPoint} cursor={cursor} containerEl={containerRef.current} />
+                <Tooltip
+                    point={hoveredPoint}
+                    cursor={cursor}
+                    containerEl={containerRef.current}
+                    extraPointData={extraPointData}
+                />
             )}
         </div>
     );
 }
 
-function Tooltip({ point, cursor, containerEl }) {
+function Tooltip({ point, cursor, containerEl, extraPointData }) {
+    const extra = extraPointData ? extraPointData.get(point.id) : null;
     // Position tooltip relative to the container, offset from the cursor.
     const rect = containerEl.getBoundingClientRect();
     const left = Math.min(cursor.x - rect.left + 14, rect.width - 220);
@@ -444,6 +486,64 @@ function Tooltip({ point, cursor, containerEl }) {
             {point.elevation != null && (
                 <div className="coordinate-data" style={{ color: 'var(--text-main)' }}>
                     Z {Number(point.elevation).toFixed(3)}
+                </div>
+            )}
+            {extra && (
+                <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                    {extra.status && (
+                        <div
+                            style={{
+                                color: STATUS_COLORS[extra.status] || 'var(--text-muted)',
+                                fontWeight: 600,
+                                fontSize: '12px',
+                                marginBottom: '4px',
+                            }}
+                        >
+                            {STATUS_LABELS[extra.status] || extra.status}
+                        </div>
+                    )}
+                    {extra.deltaH != null && extra.toleranceH != null && (
+                        <div
+                            className="coordinate-data"
+                            style={{
+                                color:
+                                    extra.status === 'out_of_tol'
+                                        ? 'var(--error)'
+                                        : 'var(--text-main)',
+                                fontSize: '11.5px',
+                            }}
+                        >
+                            ΔH {Number(extra.deltaH).toFixed(3)} / {Number(extra.toleranceH).toFixed(3)} tol
+                            {extra.status === 'out_of_tol' &&
+                                Number.isFinite(extra.deltaH) &&
+                                Number.isFinite(extra.toleranceH) && (
+                                    <span style={{ color: 'var(--error)' }}>
+                                        {' '}
+                                        = {(Number(extra.deltaH) - Number(extra.toleranceH)).toFixed(3)} over
+                                    </span>
+                                )}
+                        </div>
+                    )}
+                    {extra.deltaZ != null && (
+                        <div
+                            className="coordinate-data"
+                            style={{ color: 'var(--text-muted)', fontSize: '11.5px' }}
+                        >
+                            ΔZ {Number(extra.deltaZ).toFixed(3)}
+                        </div>
+                    )}
+                    {extra.fieldFitReason && (
+                        <div
+                            style={{
+                                color: 'var(--brand-amber)',
+                                fontSize: '11px',
+                                marginTop: '4px',
+                                fontFamily: "'Inter', sans-serif",
+                            }}
+                        >
+                            {extra.fieldFitReason.replace(/_/g, ' ')}
+                        </div>
+                    )}
                 </div>
             )}
         </div>

@@ -17,6 +17,8 @@ import {
 import DesignPointsTable from '../components/DesignPointsTable.jsx';
 import DesignPointsImporter from '../components/DesignPointsImporter.jsx';
 import AssignmentBuilder from '../components/AssignmentBuilder.jsx';
+import AssignmentsList from '../components/AssignmentsList.jsx';
+import AssignmentDetail from '../components/AssignmentDetail.jsx';
 
 const TABS = [
     { key: 'design_points', label: 'Design points', icon: Target, stage: null },
@@ -568,11 +570,11 @@ function ProjectScoped({ supabase, profile, project, onBack }) {
                     showToast={showToast}
                 />
             ) : activeTab === 'assignments' ? (
-                <AssignmentBuilder
+                <AssignmentsTab
                     supabase={supabase}
                     profile={profile}
-                    projectId={project.id}
-                    onToast={showToast}
+                    project={project}
+                    showToast={showToast}
                 />
             ) : (
                 <PlaceholderTab tab={TABS.find((t) => t.key === activeTab)} />
@@ -673,6 +675,93 @@ function DesignPointsSection({
 
             {hasPoints && <DesignPointsTable points={designPoints} />}
         </div>
+    );
+}
+
+// ── AssignmentsTab ────────────────────────────────────────────────────────
+// Dispatcher for the three Assignments-tab modes. URL owns the assignment-
+// selection state via ?assignment=<uuid>; local state owns the "user hit
+// New assignment" flag. Detail beats builder beats list in priority.
+
+function AssignmentsTab({ supabase, profile, project, showToast }) {
+    const [searchParams, setSearchParams] = useSearchParams();
+    const [builderOpen, setBuilderOpen] = useState(false);
+
+    const assignmentIdParam = searchParams.get('assignment') || null;
+
+    function openAssignment(id) {
+        setSearchParams((prev) => {
+            const next = new URLSearchParams(prev);
+            next.set('assignment', id);
+            return next;
+        });
+    }
+    function closeAssignment() {
+        setSearchParams((prev) => {
+            const next = new URLSearchParams(prev);
+            next.delete('assignment');
+            return next;
+        });
+    }
+
+    // Detail view wins whenever the URL carries an assignment id, even
+    // if the user just hit "New assignment" — mirrors how a browser-back
+    // from the detail view lands the user back on the list.
+    if (assignmentIdParam) {
+        return (
+            <AssignmentDetail
+                supabase={supabase}
+                profile={profile}
+                assignmentId={assignmentIdParam}
+                projectId={project.id}
+                onToast={showToast}
+                onBack={closeAssignment}
+            />
+        );
+    }
+
+    if (builderOpen) {
+        return (
+            <div>
+                <button
+                    type="button"
+                    onClick={() => setBuilderOpen(false)}
+                    style={{
+                        background: 'transparent',
+                        color: 'var(--text-main)',
+                        border: 'none',
+                        padding: '4px 0',
+                        marginBottom: '14px',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        fontSize: '14px',
+                        fontFamily: 'inherit',
+                    }}
+                >
+                    <ArrowLeft size={14} /> Back to assignments
+                </button>
+                <AssignmentBuilder
+                    supabase={supabase}
+                    profile={profile}
+                    projectId={project.id}
+                    onToast={showToast}
+                    onSaved={() => setBuilderOpen(false)}
+                />
+            </div>
+        );
+    }
+
+    return (
+        <AssignmentsList
+            supabase={supabase}
+            profile={profile}
+            projectId={project.id}
+            onToast={showToast}
+            onOpenBuilder={() => setBuilderOpen(true)}
+            onOpenAssignment={openAssignment}
+        />
     );
 }
 
