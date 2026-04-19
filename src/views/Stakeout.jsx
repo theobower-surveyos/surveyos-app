@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import DesignPointsTable from '../components/DesignPointsTable.jsx';
 import DesignPointsImporter from '../components/DesignPointsImporter.jsx';
+import AssignmentBuilder from '../components/AssignmentBuilder.jsx';
 
 const TABS = [
     { key: 'design_points', label: 'Design points', icon: Target, stage: null },
@@ -368,15 +369,10 @@ function ProjectScoped({ supabase, profile, project, onBack }) {
     const [importerOpen, setImporterOpen] = useState(false);
     const [toast, setToast] = useState(null);
 
-    // Toast lifecycle: success auto-dismisses after 5s; errors persist until
-    // the user hits the X. Keyed on toast.id so a new toast restarts the
-    // timer cleanly.
-    useEffect(() => {
-        if (!toast || toast.kind !== 'success') return;
-        const t = setTimeout(() => setToast(null), 5000);
-        return () => clearTimeout(t);
-    }, [toast?.id, toast?.kind]);
-
+    // Toast lifecycle is owned by the Toast component itself now — it
+    // handles the 5s success auto-dismiss and the 200ms exit animation
+    // before calling onDismiss to null out this state. Parent's job is
+    // just to fire new messages (replace-on-new semantics via key=id).
     const showToast = (kind, message) => setToast({ id: Date.now() + Math.random(), kind, message });
     const dismissToast = () => setToast(null);
 
@@ -431,7 +427,78 @@ function ProjectScoped({ supabase, profile, project, onBack }) {
                     transition: transform 0.15s ease;
                 }
                 .stakeout-back-link:hover .stakeout-back-arrow { transform: translateX(-2px); }
+
+                .stakeout-toast {
+                    position: fixed;
+                    top: 80px;
+                    right: 24px;
+                    z-index: 9999;
+                    min-width: 300px;
+                    max-width: 420px;
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    padding: 12px 14px;
+                    background-color: var(--bg-surface);
+                    border: 1px solid var(--border-subtle);
+                    border-radius: 10px;
+                    color: var(--text-main);
+                    font-size: 14px;
+                    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+                }
+                .stakeout-toast.entering {
+                    animation: stakeout-toast-slide-in 0.3s ease-out;
+                }
+                .stakeout-toast.exiting {
+                    animation: stakeout-toast-slide-out 0.2s ease-in forwards;
+                }
+                @keyframes stakeout-toast-slide-in {
+                    from { transform: translateX(100%); opacity: 0; }
+                    to   { transform: translateX(0);    opacity: 1; }
+                }
+                @keyframes stakeout-toast-slide-out {
+                    from { transform: translateX(0);    opacity: 1; }
+                    to   { transform: translateX(100%); opacity: 0; }
+                }
+                @keyframes stakeout-toast-slide-down {
+                    from { transform: translateY(-100%); opacity: 0; }
+                    to   { transform: translateY(0);     opacity: 1; }
+                }
+                @keyframes stakeout-toast-slide-up {
+                    from { transform: translateY(0);     opacity: 1; }
+                    to   { transform: translateY(-100%); opacity: 0; }
+                }
+                @media (max-width: 768px) {
+                    .stakeout-toast {
+                        top: 16px;
+                        left: 16px;
+                        right: 16px;
+                        min-width: 0;
+                        max-width: none;
+                        width: auto;
+                    }
+                    .stakeout-toast.entering {
+                        animation: stakeout-toast-slide-down 0.3s ease-out;
+                    }
+                    .stakeout-toast.exiting {
+                        animation: stakeout-toast-slide-up 0.2s ease-in forwards;
+                    }
+                }
+                .stakeout-toast-dismiss {
+                    background: transparent;
+                    border: none;
+                    color: var(--text-muted);
+                    cursor: pointer;
+                    padding: 4px;
+                    display: inline-flex;
+                    align-items: center;
+                    border-radius: 4px;
+                }
+                .stakeout-toast-dismiss:hover { color: var(--text-main); }
             `}</style>
+
+            {toast && <Toast key={toast.id} toast={toast} onDismiss={dismissToast} />}
+
             <button onClick={onBack} className="stakeout-back-link" type="button">
                 <span className="stakeout-back-arrow"><ArrowLeft size={15} /></span>
                 All stakeout projects
@@ -498,9 +565,14 @@ function ProjectScoped({ supabase, profile, project, onBack }) {
                     importerOpen={importerOpen}
                     setImporterOpen={setImporterOpen}
                     onReload={loadDesignPoints}
-                    toast={toast}
-                    dismissToast={dismissToast}
                     showToast={showToast}
+                />
+            ) : activeTab === 'assignments' ? (
+                <AssignmentBuilder
+                    supabase={supabase}
+                    profile={profile}
+                    projectId={project.id}
+                    onToast={showToast}
                 />
             ) : (
                 <PlaceholderTab tab={TABS.find((t) => t.key === activeTab)} />
@@ -518,8 +590,6 @@ function DesignPointsSection({
     importerOpen,
     setImporterOpen,
     onReload,
-    toast,
-    dismissToast,
     showToast,
 }) {
     const latestImport = useMemo(() => {
@@ -547,7 +617,6 @@ function DesignPointsSection({
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-            {toast && <Toast toast={toast} dismiss={dismissToast} />}
             {hasPoints && !importerOpen && (
                 <div
                     style={{
@@ -686,58 +755,58 @@ const primaryBtn = {
 };
 
 // ── Toast ─────────────────────────────────────────────────────────────────
-// Section-scoped notification. Success toasts auto-dismiss in ProjectScoped;
-// error toasts stay until the user clicks the X.
+// Viewport-fixed notification, rendered once at the ProjectScoped root so
+// it's visible regardless of scroll position or active tab. Owns its own
+// lifecycle: success auto-dismisses after 5s, errors persist until the
+// user clicks X. Both paths trigger a 200ms slide-out before calling
+// onDismiss, which is the parent's setToast(null). Replace-on-new
+// semantics come from the <Toast key={toast.id} .../> mount at the root.
 
-function Toast({ toast, dismiss }) {
-    if (!toast) return null;
-    const isSuccess = toast.kind === 'success';
+const ENTER_MS = 300;
+const EXIT_MS = 200;
+const AUTO_DISMISS_MS = 5000;
+
+function Toast({ toast, onDismiss }) {
+    const [exiting, setExiting] = useState(false);
+    const kind = toast.kind;
+    const isSuccess = kind === 'success';
     const accent = isSuccess ? 'var(--success)' : 'var(--error)';
     const Icon = isSuccess ? CheckCircle2 : AlertCircle;
+
+    // Success toasts queue their own exit after AUTO_DISMISS_MS. Errors
+    // stay mounted until the user clicks X — no timer for them.
+    useEffect(() => {
+        if (kind !== 'success') return;
+        const t = setTimeout(() => setExiting(true), AUTO_DISMISS_MS);
+        return () => clearTimeout(t);
+    }, [kind]);
+
+    // Once the exit class is applied the slide-out animation runs; after
+    // EXIT_MS we notify the parent to null out the toast state, which
+    // unmounts us.
+    useEffect(() => {
+        if (!exiting) return;
+        const t = setTimeout(() => onDismiss(), EXIT_MS);
+        return () => clearTimeout(t);
+    }, [exiting, onDismiss]);
+
     return (
         <div
-            key={toast.id}
+            className={`stakeout-toast ${exiting ? 'exiting' : 'entering'}`}
             role="status"
             aria-live="polite"
-            style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                padding: '12px 14px',
-                backgroundColor: 'var(--bg-surface)',
-                border: '1px solid var(--border-subtle)',
-                borderLeft: `3px solid ${accent}`,
-                borderRadius: '10px',
-                color: 'var(--text-main)',
-                fontSize: '14px',
-                animation: 'stakeout-toast-fade-in 0.25s ease',
-            }}
+            style={{ borderLeft: `3px solid ${accent}` }}
         >
             <Icon size={18} color={accent} />
             <span style={{ flex: 1, lineHeight: 1.5 }}>{toast.message}</span>
             <button
-                onClick={dismiss}
+                onClick={() => setExiting(true)}
                 aria-label="Dismiss"
                 type="button"
-                style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--text-muted)',
-                    cursor: 'pointer',
-                    padding: '4px',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    borderRadius: '4px',
-                }}
+                className="stakeout-toast-dismiss"
             >
                 <X size={14} />
             </button>
-            <style>{`
-                @keyframes stakeout-toast-fade-in {
-                    from { opacity: 0; transform: translateY(-4px); }
-                    to   { opacity: 1; transform: translateY(0); }
-                }
-            `}</style>
         </div>
     );
 }
