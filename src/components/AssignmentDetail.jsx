@@ -7,9 +7,22 @@ import {
     Search,
     ArrowUp,
     ArrowDown,
+    Pencil,
 } from 'lucide-react';
 import DesignPointsPlanView from './DesignPointsPlanView.jsx';
 import AssignmentTestDataSeeder from './AssignmentTestDataSeeder.jsx';
+import AssignmentEditForm from './AssignmentEditForm.jsx';
+import AssignmentPointsEditor from './AssignmentPointsEditor.jsx';
+import PointTolerancePopover from './PointTolerancePopover.jsx';
+
+// Editing is allowed only while the assignment is still in PM hands.
+// Once it's in_progress / submitted / reconciled, the point set, party
+// chief, and tolerances all freeze — those states represent crew or
+// office actions that the schema's column-protection trigger and the
+// view's reconcile workflow rely on.
+function isAssignmentEditable(status) {
+    return status === 'draft' || status === 'sent';
+}
 
 const STATUS_STYLES = {
     draft:       { bg: 'transparent',              border: 'var(--border-subtle)', color: 'var(--text-muted)'      },
@@ -59,10 +72,21 @@ export default function AssignmentDetail({
     const [creator, setCreator] = useState(null);
     const [summaryRows, setSummaryRows] = useState([]);
     const [designPoints, setDesignPoints] = useState([]);
+    // design_point_id → { id (assignment_point_id), sort_order, override_tolerance_h, override_tolerance_v }
+    const [assignmentPointMap, setAssignmentPointMap] = useState(new Map());
+    const [partyChiefs, setPartyChiefs] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [hoveredId, setHoveredId] = useState(null);
     const [reloadTick, setReloadTick] = useState(0);
+    const [editingMetadata, setEditingMetadata] = useState(false);
+    const [editingPoints, setEditingPoints] = useState(false);
+    // open popover: { assignmentPointId, designPointId, pointId, currentH, currentV, anchorRect }
+    const [overridePopover, setOverridePopover] = useState(null);
+
+    function reload() {
+        setReloadTick((t) => t + 1);
+    }
 
     // ── Load everything ───────────────────────────────────────────
     useEffect(() => {
@@ -85,7 +109,7 @@ export default function AssignmentDetail({
                     supabase
                         .from('stakeout_assignment_points')
                         .select(
-                            'design_point_id, sort_order, override_tolerance_h, override_tolerance_v, stakeout_design_points(id, point_id, feature_code, feature_description, northing, easting, elevation)',
+                            'id, design_point_id, sort_order, override_tolerance_h, override_tolerance_v, stakeout_design_points(id, point_id, feature_code, feature_description, northing, easting, elevation)',
                         )
                         .eq('assignment_id', assignmentId)
                         .order('sort_order', { ascending: true }),
@@ -99,6 +123,19 @@ export default function AssignmentDetail({
                     .map((r) => r.stakeout_design_points)
                     .filter(Boolean);
                 setDesignPoints(dpRows);
+
+                const apMap = new Map();
+                (dpJoinRes.data || []).forEach((r) => {
+                    if (r && r.design_point_id) {
+                        apMap.set(r.design_point_id, {
+                            id: r.id,
+                            sort_order: r.sort_order,
+                            override_tolerance_h: r.override_tolerance_h,
+                            override_tolerance_v: r.override_tolerance_v,
+                        });
+                    }
+                });
+                setAssignmentPointMap(apMap);
 
                 setSummaryRows(summaryRes.data || []);
 
@@ -115,6 +152,19 @@ export default function AssignmentDetail({
                         setChief(byId.get(asg.party_chief_id) || null);
                         setCreator(byId.get(asg.created_by) || null);
                     }
+                }
+
+                // Party chief roster — needed by the inline edit form's
+                // dropdown. Loaded once per assignment open; cheap query.
+                if (profile?.firm_id) {
+                    const { data: chiefs } = await supabase
+                        .from('user_profiles')
+                        .select('id, first_name, last_name')
+                        .eq('firm_id', profile.firm_id)
+                        .eq('role', 'party_chief')
+                        .eq('is_active', true)
+                        .order('first_name', { ascending: true });
+                    if (!cancelled) setPartyChiefs(chiefs || []);
                 }
             } catch (err) {
                 if (cancelled) return;
@@ -289,8 +339,45 @@ export default function AssignmentDetail({
                 </div>
             </div>
 
-            {/* Metadata card */}
+            {/* Metadata card OR inline edit form */}
+            {editingMetadata ? (
+                <AssignmentEditForm
+                    supabase={supabase}
+                    assignment={assignment}
+                    partyChiefs={partyChiefs}
+                    onSaved={(updated) => {
+                        setAssignment(updated);
+                        setEditingMetadata(false);
+                        reload();
+                    }}
+                    onCancelled={() => setEditingMetadata(false)}
+                    onToast={onToast}
+                    readOnlyPartyChief={assignment.status === 'sent'}
+                />
+            ) : (
             <div style={card}>
+                <div
+                    style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginBottom: '14px',
+                    }}
+                >
+                    <h3 style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+                        Assignment details
+                    </h3>
+                    {isAssignmentEditable(assignment.status) && (
+                        <button
+                            type="button"
+                            onClick={() => setEditingMetadata(true)}
+                            style={editIconBtn}
+                            title="Edit assignment metadata"
+                        >
+                            <Pencil size={12} /> Edit
+                        </button>
+                    )}
+                </div>
                 <dl className="detail-meta-grid">
                     <dt>Assignment date</dt>
                     <dd>{assignment.assignment_date || '—'}</dd>
@@ -326,8 +413,40 @@ export default function AssignmentDetail({
                             <dd style={{ whiteSpace: 'pre-wrap' }}>{assignment.notes}</dd>
                         </>
                     )}
+
+                    {(assignment.client_contact_name ||
+                        assignment.client_contact_phone ||
+                        assignment.client_contact_role ||
+                        assignment.client_contact_notes) && (
+                        <>
+                            <dt>Client contact</dt>
+                            <dd style={{ whiteSpace: 'pre-wrap' }}>
+                                {[
+                                    assignment.client_contact_name,
+                                    assignment.client_contact_role &&
+                                        ` · ${assignment.client_contact_role}`,
+                                    assignment.client_contact_phone &&
+                                        ` · ${assignment.client_contact_phone}`,
+                                ]
+                                    .filter(Boolean)
+                                    .join('')}
+                                {assignment.client_contact_notes && (
+                                    <div
+                                        style={{
+                                            color: 'var(--text-muted)',
+                                            fontSize: '12px',
+                                            marginTop: '4px',
+                                        }}
+                                    >
+                                        {assignment.client_contact_notes}
+                                    </div>
+                                )}
+                            </dd>
+                        </>
+                    )}
                 </dl>
             </div>
+            )}
 
             {/* Stat cards */}
             <div className="detail-stats">
@@ -339,36 +458,74 @@ export default function AssignmentDetail({
                 <StatCard label="Pending" value={statusCounts.pending} color="var(--text-muted)" />
             </div>
 
-            {/* Plan view */}
-            <div style={{ position: 'relative', marginBottom: '12px' }}>
-                <div style={{ ...card, padding: 0, overflow: 'hidden', height: '600px' }}>
-                    <DesignPointsPlanView
-                        designPoints={designPoints}
-                        selectedIds={EMPTY_SET}
-                        onSelectionChange={noop}
-                        hoveredId={hoveredId}
-                        onHoverChange={setHoveredId}
-                        pointStatusMap={pointStatusMap}
-                        extraPointData={extraPointData}
+            {/* Plan view OR points editor */}
+            {editingPoints ? (
+                <div style={{ marginBottom: '12px' }}>
+                    <AssignmentPointsEditor
+                        supabase={supabase}
+                        projectId={projectId}
+                        assignmentId={assignmentId}
+                        initialSelectedPointIds={[...assignmentPointMap.keys()]}
+                        onSaved={() => {
+                            setEditingPoints(false);
+                            reload();
+                        }}
+                        onCancelled={() => setEditingPoints(false)}
+                        onToast={onToast}
                     />
                 </div>
+            ) : (
+                <>
+                    {isAssignmentEditable(assignment.status) && (
+                        <div
+                            style={{
+                                display: 'flex',
+                                justifyContent: 'flex-end',
+                                marginBottom: '8px',
+                            }}
+                        >
+                            <button
+                                type="button"
+                                onClick={() => setEditingPoints(true)}
+                                style={editIconBtn}
+                                title="Add or remove points from this assignment"
+                            >
+                                <Pencil size={12} /> Edit points
+                            </button>
+                        </div>
+                    )}
 
-                {/* Dev-only seeder overlay (hidden in prod builds) */}
-                <AssignmentTestDataSeeder
-                    supabase={supabase}
-                    profile={profile}
-                    assignment={assignment}
-                    designPoints={designPoints}
-                    onToast={onToast}
-                    onSeeded={() => setReloadTick((t) => t + 1)}
-                />
+                    <div style={{ position: 'relative', marginBottom: '12px' }}>
+                        <div style={{ ...card, padding: 0, overflow: 'hidden', height: '600px', marginBottom: 0 }}>
+                            <DesignPointsPlanView
+                                designPoints={designPoints}
+                                selectedIds={EMPTY_SET}
+                                onSelectionChange={noop}
+                                hoveredId={hoveredId}
+                                onHoverChange={setHoveredId}
+                                pointStatusMap={pointStatusMap}
+                                extraPointData={extraPointData}
+                            />
+                        </div>
 
-                {!hasQc && (
-                    <div style={noQcOverlay}>
-                        No QC data submitted yet
+                        {/* Dev-only seeder overlay (hidden in prod builds) */}
+                        <AssignmentTestDataSeeder
+                            supabase={supabase}
+                            profile={profile}
+                            assignment={assignment}
+                            designPoints={designPoints}
+                            onToast={onToast}
+                            onSeeded={reload}
+                        />
+
+                        {!hasQc && (
+                            <div style={noQcOverlay}>
+                                No QC data submitted yet
+                            </div>
+                        )}
                     </div>
-                )}
-            </div>
+                </>
+            )}
 
             {/* Legend */}
             <div
@@ -389,7 +546,33 @@ export default function AssignmentDetail({
             </div>
 
             {/* Point list */}
-            <PointList rows={summaryRows} />
+            <PointList
+                rows={summaryRows}
+                assignmentPointMap={assignmentPointMap}
+                editable={isAssignmentEditable(assignment.status)}
+                defaultToleranceH={assignment.default_tolerance_h}
+                defaultToleranceV={assignment.default_tolerance_v}
+                onOpenOverride={(payload) => setOverridePopover(payload)}
+            />
+
+            {overridePopover && (
+                <PointTolerancePopover
+                    supabase={supabase}
+                    assignmentPointId={overridePopover.assignmentPointId}
+                    pointId={overridePopover.pointId}
+                    currentOverrideH={overridePopover.currentH}
+                    currentOverrideV={overridePopover.currentV}
+                    defaultH={assignment.default_tolerance_h}
+                    defaultV={assignment.default_tolerance_v}
+                    anchorRect={overridePopover.anchorRect}
+                    onSaved={() => {
+                        setOverridePopover(null);
+                        reload();
+                    }}
+                    onCancelled={() => setOverridePopover(null)}
+                    onToast={onToast}
+                />
+            )}
         </div>
     );
 }
@@ -441,6 +624,7 @@ const LIST_COLS = [
     { key: 'delta_h', label: 'ΔH', num: true, sortable: true },
     { key: 'delta_z', label: 'ΔZ', num: true },
     { key: 'effective_tolerance_h', label: 'Tol H', num: true },
+    { key: '__override', label: 'Override' },
     { key: 'h_status', label: 'Status', sortable: true },
     { key: 'field_fit_reason', label: 'Field-fit reason' },
 ];
@@ -451,7 +635,76 @@ function fmtNum(v, dec = 3) {
     return Number.isFinite(n) ? n.toFixed(dec) : '';
 }
 
-function PointList({ rows }) {
+// One-cell renderer for the new "Override" column. Displays the per-point
+// override values when present (amber bold mono) or "Default" otherwise
+// (muted italic). Click captures the cell's bounding rect and opens the
+// PointTolerancePopover up at the parent. Read-only assignments (sent →
+// reconciled) render the same content but without click handling.
+function OverrideCell({ assignmentPoint, pointId, designPointId, editable, onOpen }) {
+    const h = assignmentPoint?.override_tolerance_h;
+    const v = assignmentPoint?.override_tolerance_v;
+    const hasOverride = h != null || v != null;
+    const apId = assignmentPoint?.id;
+
+    function handleClick(e) {
+        if (!editable || !apId) return;
+        const rect = e.currentTarget.getBoundingClientRect();
+        onOpen({
+            assignmentPointId: apId,
+            designPointId,
+            pointId,
+            currentH: h,
+            currentV: v,
+            anchorRect: rect,
+        });
+    }
+
+    const interactive = editable && apId;
+    const baseStyle = {
+        background: 'transparent',
+        border: 'none',
+        padding: '2px 6px',
+        borderRadius: '4px',
+        cursor: interactive ? 'pointer' : 'default',
+        fontFamily: hasOverride ? "'JetBrains Mono', monospace" : 'inherit',
+        fontSize: '12px',
+        color: hasOverride ? 'var(--brand-amber)' : 'var(--text-muted)',
+        fontWeight: hasOverride ? 700 : 400,
+        fontStyle: hasOverride ? 'normal' : 'italic',
+        textAlign: 'left',
+    };
+
+    const label = hasOverride
+        ? `H: ${h != null ? Number(h).toFixed(3) : '—'} / V: ${v != null ? Number(v).toFixed(3) : '—'}`
+        : 'Default';
+
+    if (!interactive) {
+        return <span style={baseStyle}>{label}</span>;
+    }
+
+    return (
+        <button
+            type="button"
+            onClick={handleClick}
+            style={{
+                ...baseStyle,
+                cursor: 'pointer',
+            }}
+            title="Set per-point tolerance override"
+        >
+            {label}
+        </button>
+    );
+}
+
+function PointList({
+    rows,
+    assignmentPointMap,
+    editable,
+    defaultToleranceH,
+    defaultToleranceV,
+    onOpenOverride,
+}) {
     const [filter, setFilter] = useState('');
     const [sort, setSort] = useState({ key: 'point_id', dir: 'asc' });
 
@@ -651,6 +904,20 @@ function PointList({ rows }) {
                                                     </td>
                                                 );
                                             }
+                                            if (c.key === '__override') {
+                                                const ap = assignmentPointMap?.get(r.design_point_id);
+                                                return (
+                                                    <td key={c.key}>
+                                                        <OverrideCell
+                                                            assignmentPoint={ap}
+                                                            pointId={r.point_id}
+                                                            designPointId={r.design_point_id}
+                                                            editable={editable}
+                                                            onOpen={onOpenOverride}
+                                                        />
+                                                    </td>
+                                                );
+                                            }
                                             const content = c.num ? fmtNum(raw) : raw == null ? '' : String(raw);
                                             return (
                                                 <td
@@ -720,6 +987,15 @@ function PointList({ rows }) {
                                         {r.field_fit_reason.replace(/_/g, ' ')}
                                     </div>
                                 )}
+                                <div style={{ marginTop: '6px' }}>
+                                    <OverrideCell
+                                        assignmentPoint={assignmentPointMap?.get(r.design_point_id)}
+                                        pointId={r.point_id}
+                                        designPointId={r.design_point_id}
+                                        editable={editable}
+                                        onOpen={onOpenOverride}
+                                    />
+                                </div>
                             </div>
                         );
                     })
@@ -809,6 +1085,23 @@ const statLabelStyle = {
     textTransform: 'uppercase',
     fontWeight: 600,
     marginBottom: '6px',
+};
+
+const editIconBtn = {
+    background: 'transparent',
+    border: '1px solid var(--border-subtle)',
+    color: 'var(--text-muted)',
+    padding: '5px 10px',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '11.5px',
+    fontWeight: 600,
+    letterSpacing: '0.3px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '5px',
+    fontFamily: 'inherit',
+    transition: 'color 0.15s ease, border-color 0.15s ease',
 };
 
 const noQcOverlay = {
