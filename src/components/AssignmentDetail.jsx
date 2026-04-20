@@ -8,12 +8,22 @@ import {
     ArrowUp,
     ArrowDown,
     Pencil,
+    Send,
+    CheckCircle2,
+    AlertTriangle,
 } from 'lucide-react';
 import DesignPointsPlanView from './DesignPointsPlanView.jsx';
 import AssignmentTestDataSeeder from './AssignmentTestDataSeeder.jsx';
 import AssignmentEditForm from './AssignmentEditForm.jsx';
 import AssignmentPointsEditor from './AssignmentPointsEditor.jsx';
 import PointTolerancePopover from './PointTolerancePopover.jsx';
+import AssignmentProgressBar from './AssignmentProgressBar.jsx';
+import ReconciliationModal from './ReconciliationModal.jsx';
+import { exportAsCSV, exportAsXLSX } from '../utils/stakeoutExports.js';
+
+function isExportable(status) {
+    return status === 'submitted' || status === 'reconciled';
+}
 
 // Editing is allowed only while the assignment is still in PM hands.
 // Once it's in_progress / submitted / reconciled, the point set, party
@@ -83,9 +93,108 @@ export default function AssignmentDetail({
     const [editingPoints, setEditingPoints] = useState(false);
     // open popover: { assignmentPointId, designPointId, pointId, currentH, currentV, anchorRect }
     const [overridePopover, setOverridePopover] = useState(null);
+    const [project, setProject] = useState(null);
+    const [reconcileOpen, setReconcileOpen] = useState(false);
+    const [resendConfirmOpen, setResendConfirmOpen] = useState(false);
+    const [resendBusy, setResendBusy] = useState(false);
+    const [exportBusy, setExportBusy] = useState(null); // 'csv' | 'xlsx' | null
 
     function reload() {
         setReloadTick((t) => t + 1);
+    }
+
+    function triggerDownload(blob, filename) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 100);
+    }
+
+    function buildReportMetadata() {
+        return {
+            project_name: project?.project_name || '(unknown project)',
+            assignment_title: assignment?.title || '',
+            assignment_date: assignment?.assignment_date || '',
+            party_chief_name: fullName(chief) || null,
+            instrument: null,
+            tolerance_h: assignment?.default_tolerance_h,
+        };
+    }
+
+    async function handleExportCSV() {
+        if (exportBusy || !assignment) return;
+        setExportBusy('csv');
+        try {
+            const metadata = buildReportMetadata();
+            const { blob, filename } = exportAsCSV({ rows: summaryRows, metadata });
+            triggerDownload(blob, filename);
+            if (onToast) onToast('success', `Downloaded ${filename}`);
+        } catch (err) {
+            console.error('[AssignmentDetail] CSV export failed:', err);
+            if (onToast) onToast('error', 'CSV export failed. Check console.');
+        } finally {
+            setExportBusy(null);
+        }
+    }
+
+    async function handleExportXLSX() {
+        if (exportBusy || !assignment) return;
+        setExportBusy('xlsx');
+        try {
+            const metadata = buildReportMetadata();
+            const { blob, filename } = await exportAsXLSX({ rows: summaryRows, metadata });
+            triggerDownload(blob, filename);
+            if (onToast) onToast('success', `Downloaded ${filename}`);
+        } catch (err) {
+            console.error('[AssignmentDetail] XLSX export failed:', err);
+            if (onToast) onToast('error', 'XLSX export failed. Check console.');
+        } finally {
+            setExportBusy(null);
+        }
+    }
+
+    async function handleResend() {
+        if (resendBusy || !assignment) return;
+        setResendBusy(true);
+        const updates = {
+            status: 'sent',
+            sent_at: new Date().toISOString(),
+        };
+        try {
+            const { data, error } = await supabase
+                .from('stakeout_assignments')
+                .update(updates)
+                .eq('id', assignment.id)
+                .select('*')
+                .single();
+            if (error) throw error;
+            setAssignment(data);
+            // TODO (Stage 9): fire crew notification via the PWA push pipeline
+            // once it lands on the mobile side. The DB write is sufficient
+            // for now — the crew's AssignmentsList query will pick it up on
+            // next load.
+            const chiefLabel = fullName(chief) || 'crew';
+            if (onToast)
+                onToast(
+                    'success',
+                    `Re-sent to ${chiefLabel}. (Crew notification: TODO in Stage 9.)`,
+                );
+            setResendConfirmOpen(false);
+            reload();
+        } catch (err) {
+            console.error('[AssignmentDetail] resend failed:', err);
+            if (onToast)
+                onToast(
+                    'error',
+                    `Could not re-send${err?.code ? ` (code ${err.code})` : ''}. Try again.`,
+                );
+        } finally {
+            setResendBusy(false);
+        }
     }
 
     // ── Load everything ───────────────────────────────────────────
@@ -165,6 +274,17 @@ export default function AssignmentDetail({
                         .eq('is_active', true)
                         .order('first_name', { ascending: true });
                     if (!cancelled) setPartyChiefs(chiefs || []);
+                }
+
+                // Project name — needed by export metadata and the
+                // reconciliation modal. Cheap single-row read.
+                if (asg.project_id) {
+                    const { data: proj } = await supabase
+                        .from('projects')
+                        .select('id, project_name')
+                        .eq('id', asg.project_id)
+                        .single();
+                    if (!cancelled) setProject(proj || null);
                 }
             } catch (err) {
                 if (cancelled) return;
@@ -327,17 +447,40 @@ export default function AssignmentDetail({
                         </span>
                     </div>
                     <div style={{ display: 'flex', gap: '8px' }}>
-                        <button type="button" disabled style={disabledBtn} title="Coming in Stage 7b">
-                            <FileSpreadsheet size={13} /> Export CSV
-                            <span style={stageTag}>Stage 7b</span>
+                        <button
+                            type="button"
+                            onClick={handleExportCSV}
+                            disabled={!isExportable(assignment.status) || exportBusy != null}
+                            style={exportBtnStyle(!isExportable(assignment.status) || exportBusy != null)}
+                            title={
+                                !isExportable(assignment.status)
+                                    ? 'Available once QC data is submitted'
+                                    : 'Download QC report as CSV'
+                            }
+                        >
+                            <FileSpreadsheet size={13} />
+                            {exportBusy === 'csv' ? 'Exporting…' : 'Export CSV'}
                         </button>
-                        <button type="button" disabled style={disabledBtn} title="Coming in Stage 7b">
-                            <FileText size={13} /> Export XLSX
-                            <span style={stageTag}>Stage 7b</span>
+                        <button
+                            type="button"
+                            onClick={handleExportXLSX}
+                            disabled={!isExportable(assignment.status) || exportBusy != null}
+                            style={exportBtnStyle(!isExportable(assignment.status) || exportBusy != null)}
+                            title={
+                                !isExportable(assignment.status)
+                                    ? 'Available once QC data is submitted'
+                                    : 'Download QC report as XLSX'
+                            }
+                        >
+                            <FileText size={13} />
+                            {exportBusy === 'xlsx' ? 'Exporting…' : 'Export XLSX'}
                         </button>
                     </div>
                 </div>
             </div>
+
+            {/* Progress bar — read-only, below the status chip */}
+            <AssignmentProgressBar status={assignment.status} />
 
             {/* Metadata card OR inline edit form */}
             {editingMetadata ? (
@@ -368,14 +511,32 @@ export default function AssignmentDetail({
                         Assignment details
                     </h3>
                     {isAssignmentEditable(assignment.status) && (
-                        <button
-                            type="button"
-                            onClick={() => setEditingMetadata(true)}
-                            style={editIconBtn}
-                            title="Edit assignment metadata"
-                        >
-                            <Pencil size={12} /> Edit
-                        </button>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            <button
+                                type="button"
+                                onClick={() => setResendConfirmOpen(true)}
+                                disabled={!assignment.party_chief_id}
+                                style={editIconBtn}
+                                title={
+                                    !assignment.party_chief_id
+                                        ? 'Assign a party chief first'
+                                        : assignment.status === 'draft'
+                                            ? 'Send this assignment to the crew'
+                                            : 'Re-send this assignment to the crew'
+                                }
+                            >
+                                <Send size={12} />
+                                {assignment.status === 'draft' ? 'Send to crew' : 'Re-send to crew'}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setEditingMetadata(true)}
+                                style={editIconBtn}
+                                title="Edit assignment metadata"
+                            >
+                                <Pencil size={12} /> Edit
+                            </button>
+                        </div>
                     )}
                 </div>
                 <dl className="detail-meta-grid">
@@ -411,6 +572,31 @@ export default function AssignmentDetail({
                         <>
                             <dt>Notes</dt>
                             <dd style={{ whiteSpace: 'pre-wrap' }}>{assignment.notes}</dd>
+                        </>
+                    )}
+
+                    {assignment.reconciled_at && (
+                        <>
+                            <dt>Reconciled on</dt>
+                            <dd className="coordinate-data">
+                                {new Date(assignment.reconciled_at).toLocaleString()}
+                            </dd>
+                            <dt>Reconciled by</dt>
+                            <dd>
+                                <ReconciledByLabel
+                                    supabase={supabase}
+                                    userId={assignment.reconciled_by}
+                                />
+                            </dd>
+                        </>
+                    )}
+
+                    {assignment.reconciliation_note && (
+                        <>
+                            <dt>Reconciliation note</dt>
+                            <dd style={{ whiteSpace: 'pre-wrap' }}>
+                                {assignment.reconciliation_note}
+                            </dd>
                         </>
                     )}
 
@@ -573,6 +759,170 @@ export default function AssignmentDetail({
                     onToast={onToast}
                 />
             )}
+
+            {/* Reconcile CTA — only while status === 'submitted'. Once
+                reconciled, the metadata card already surfaces the note
+                and timestamp, so we hide the CTA. */}
+            {assignment.status === 'submitted' && (
+                <div style={reconcileCard}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <CheckCircle2 size={18} color="var(--brand-teal-light)" />
+                        <div>
+                            <div
+                                style={{
+                                    color: 'var(--text-main)',
+                                    fontWeight: 600,
+                                    fontSize: '14px',
+                                }}
+                            >
+                                Ready to reconcile
+                            </div>
+                            <div
+                                style={{
+                                    color: 'var(--text-muted)',
+                                    fontSize: '12.5px',
+                                    marginTop: '2px',
+                                }}
+                            >
+                                Field work submitted. Review the QC and close out this assignment.
+                            </div>
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setReconcileOpen(true)}
+                        style={reconcilePrimaryBtn}
+                    >
+                        <CheckCircle2 size={14} /> Reconcile assignment
+                    </button>
+                </div>
+            )}
+
+            {reconcileOpen && (
+                <ReconciliationModal
+                    supabase={supabase}
+                    profile={profile}
+                    assignment={assignment}
+                    project={project}
+                    chiefName={fullName(chief)}
+                    qcRows={summaryRows}
+                    qcSummary={statusCounts}
+                    onClose={() => setReconcileOpen(false)}
+                    onReconciled={(updated) => {
+                        setAssignment(updated);
+                        setReconcileOpen(false);
+                        reload();
+                    }}
+                    onToast={onToast}
+                />
+            )}
+
+            {resendConfirmOpen && (
+                <ResendConfirmModal
+                    chiefName={fullName(chief)}
+                    wasDraft={assignment.status === 'draft'}
+                    busy={resendBusy}
+                    onCancel={() => setResendConfirmOpen(false)}
+                    onConfirm={handleResend}
+                />
+            )}
+        </div>
+    );
+}
+
+// ── ReconciledByLabel ──────────────────────────────────────────────────
+// Tiny name-lookup widget for the "Reconciled by" row. Fetches once on
+// mount so the common case (PM reconciles their own assignment and it's
+// immediately surfaced) doesn't need an extra prop drill.
+
+function ReconciledByLabel({ supabase, userId }) {
+    const [name, setName] = useState(null);
+    useEffect(() => {
+        let cancelled = false;
+        if (!userId) {
+            setName(null);
+            return;
+        }
+        (async () => {
+            try {
+                const { data } = await supabase
+                    .from('user_profiles')
+                    .select('first_name, last_name')
+                    .eq('id', userId)
+                    .single();
+                if (!cancelled) setName(fullName(data));
+            } catch {
+                if (!cancelled) setName(null);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [supabase, userId]);
+    return name ? <>{name}</> : <span style={{ color: 'var(--text-muted)' }}>—</span>;
+}
+
+// ── ResendConfirmModal ─────────────────────────────────────────────────
+
+function ResendConfirmModal({ chiefName, wasDraft, busy, onCancel, onConfirm }) {
+    useEffect(() => {
+        function onKey(e) {
+            if (e.key === 'Escape' && !busy) onCancel();
+        }
+        document.addEventListener('keydown', onKey, true);
+        return () => document.removeEventListener('keydown', onKey, true);
+    }, [busy, onCancel]);
+
+    return (
+        <div style={resendBackdrop} onClick={() => (busy ? null : onCancel())}>
+            <div style={resendCard} onClick={(e) => e.stopPropagation()}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+                    <Send size={18} color="var(--brand-teal-light)" />
+                    <h3 style={{ margin: 0, fontSize: '15px', color: 'var(--text-main)', fontWeight: 600 }}>
+                        {wasDraft ? 'Send assignment' : 'Re-send assignment'}
+                    </h3>
+                </div>
+                <p
+                    style={{
+                        color: 'var(--text-muted)',
+                        fontSize: '13px',
+                        margin: '0 0 16px 0',
+                        lineHeight: 1.5,
+                    }}
+                >
+                    {wasDraft
+                        ? `Send this assignment to ${chiefName || 'the assigned chief'}?`
+                        : `Re-send this assignment to ${chiefName || 'the assigned chief'}?`}{' '}
+                    The sent timestamp will be updated.
+                </p>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                    <button
+                        type="button"
+                        onClick={onCancel}
+                        disabled={busy}
+                        style={resendCancelBtn(busy)}
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="button"
+                        onClick={onConfirm}
+                        disabled={busy}
+                        style={resendConfirmBtn(busy)}
+                    >
+                        {busy ? (
+                            <>
+                                <Loader size={13} className="spinning" /> Sending…
+                            </>
+                        ) : (
+                            <>
+                                <Send size={13} /> {wasDraft ? 'Send' : 'Re-send'}
+                            </>
+                        )}
+                    </button>
+                </div>
+                <style>{`@keyframes spin { 100% { transform: rotate(360deg); } } .spinning { animation: spin 1s linear infinite; }`}</style>
+            </div>
         </div>
     );
 }
@@ -1048,29 +1398,6 @@ const primaryBtn = {
     fontFamily: 'inherit',
 };
 
-const disabledBtn = {
-    backgroundColor: 'transparent',
-    color: 'var(--text-muted)',
-    border: '1px solid var(--border-subtle)',
-    padding: '6px 12px',
-    borderRadius: '6px',
-    cursor: 'not-allowed',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '6px',
-    fontSize: '12px',
-    fontFamily: 'inherit',
-    opacity: 0.6,
-};
-
-const stageTag = {
-    marginLeft: '4px',
-    fontSize: '9.5px',
-    letterSpacing: '0.5px',
-    textTransform: 'uppercase',
-    opacity: 0.7,
-};
-
 const statCardStyle = {
     backgroundColor: 'var(--bg-surface)',
     border: '1px solid var(--border-subtle)',
@@ -1103,6 +1430,109 @@ const editIconBtn = {
     fontFamily: 'inherit',
     transition: 'color 0.15s ease, border-color 0.15s ease',
 };
+
+function exportBtnStyle(disabled) {
+    return {
+        backgroundColor: disabled ? 'transparent' : 'var(--bg-surface)',
+        color: disabled ? 'var(--text-muted)' : 'var(--text-main)',
+        border: '1px solid var(--border-subtle)',
+        padding: '6px 12px',
+        borderRadius: '6px',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.6 : 1,
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '6px',
+        fontSize: '12px',
+        fontFamily: 'inherit',
+        fontWeight: 500,
+        transition: 'border-color 0.15s ease, color 0.15s ease',
+    };
+}
+
+const reconcileCard = {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '16px',
+    flexWrap: 'wrap',
+    padding: '16px 20px',
+    marginTop: '28px',
+    backgroundColor: 'var(--bg-surface)',
+    border: '1px solid var(--brand-teal)',
+    borderRadius: '12px',
+    boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
+};
+
+const reconcilePrimaryBtn = {
+    backgroundColor: 'var(--brand-teal)',
+    color: '#fff',
+    border: '1px solid var(--brand-teal)',
+    padding: '10px 18px',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontWeight: 600,
+    fontSize: '13.5px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    fontFamily: 'inherit',
+};
+
+const resendBackdrop = {
+    position: 'fixed',
+    inset: 0,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    backdropFilter: 'blur(3px)',
+    zIndex: 10000,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '20px',
+};
+
+const resendCard = {
+    backgroundColor: 'var(--bg-surface)',
+    border: '1px solid var(--border-subtle)',
+    borderRadius: '12px',
+    padding: '20px 22px',
+    width: '100%',
+    maxWidth: '420px',
+    boxShadow: '0 16px 48px rgba(0,0,0,0.55)',
+};
+
+function resendCancelBtn(disabled) {
+    return {
+        backgroundColor: 'transparent',
+        color: 'var(--text-main)',
+        border: '1px solid var(--border-subtle)',
+        padding: '8px 14px',
+        borderRadius: '8px',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
+        fontWeight: 500,
+        fontSize: '13px',
+        fontFamily: 'inherit',
+    };
+}
+
+function resendConfirmBtn(disabled) {
+    return {
+        backgroundColor: 'var(--brand-teal)',
+        color: '#fff',
+        border: '1px solid var(--brand-teal)',
+        padding: '8px 14px',
+        borderRadius: '8px',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
+        fontWeight: 600,
+        fontSize: '13px',
+        fontFamily: 'inherit',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '6px',
+    };
+}
 
 const noQcOverlay = {
     position: 'absolute',
