@@ -19,6 +19,7 @@ import LiveView from './views/LiveView';
 import MobileCrewView from './views/MobileCrewView';
 import Stakeout from './views/Stakeout';
 import WelcomeScreen from './components/WelcomeScreen';
+import { registerServiceWorker } from './crew-pwa/swRegistration';
 
 class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { hasError: false, error: null }; }
@@ -63,10 +64,11 @@ export default function App() {
   const [projectPhotos, setProjectPhotos] = useState([]);
 
   useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').then(r => console.log('Offline Engine Active:', r.scope)).catch(e => console.log('Offline Engine Failed:', e));
-      });
+    // Crew-scoped PWA — Workbox-generated service worker, prod-only. The
+    // registration itself internally no-ops in dev and on unsupported
+    // browsers, so this guard is belt-and-suspenders.
+    if (import.meta.env.PROD) {
+      registerServiceWorker();
     }
   }, []);
 
