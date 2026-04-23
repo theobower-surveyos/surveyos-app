@@ -1,3 +1,10 @@
+## Session Continuity (READ FIRST)
+
+At the start of every session, read `CLAUDE_JOURNAL.md` in the repo root. It contains the current project state, git state, Phase 1 roadmap with status, pricing framework, known bugs, deferred features, and session log.
+
+At the end of every session, update `CLAUDE_JOURNAL.md` per the End-of-Session Protocol at the bottom of that file. Commit the journal update alongside code changes.
+
+---
 # CLAUDE.md — SurveyOS Project Conventions
 
 ## What SurveyOS is
