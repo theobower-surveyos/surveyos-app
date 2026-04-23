@@ -1,6 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { classifyPoints } from './planview/pointClassification.js';
 import { resolveFeatureStyle } from './planview/featureCodeStyles.js';
+import { classifyPointToGroup } from './planview/featureCodeGroups.js';
+import CanvasToolbar from './planview/CanvasToolbar.jsx';
+import FeatureLegend from './planview/FeatureLegend.jsx';
+import ZoomToPointPopover from './planview/ZoomToPointPopover.jsx';
 
 // ─── DesignPointsPlanView ───────────────────────────────────────────────
 // SVG canvas showing every design point in survey coordinate space.
@@ -148,7 +152,8 @@ export default function DesignPointsPlanView({
     showControlPoints = true,
 }) {
     const svgRef = useRef(null);
-    const containerRef = useRef(null);
+    const containerRef = useRef(null);      // canvas area (wheel listener lives here)
+    const outerWrapperRef = useRef(null);   // flex column: toolbar + canvas area
     const tooltipRef = useRef(null);
     const tooltipMeasuredRef = useRef(null); // { w, h }
     const activePointersRef = useRef(new Map()); // pointerId → {clientX, clientY}
@@ -162,12 +167,19 @@ export default function DesignPointsPlanView({
     // changes, which means it cannot close over defaultViewBox directly.
     const defaultViewBoxRef = useRef(null);
     const allowPanZoomRef = useRef(allowPanZoom);
+    const zoomAnimRef = useRef(null); // active RAF id for animated zoom
 
     const [lasso, setLasso] = useState(null);
     const [cursor, setCursor] = useState(null);
     const [isSpaceDown, setIsSpaceDown] = useState(false);
     const [isPanning, setIsPanning] = useState(false);
     const [viewBoxState, setViewBoxState] = useState(null);
+    // Stage 8.5b-polish: filter + legend + zoom-popover state lives here
+    const [filterState, setFilterState] = useState(null); // null = all active, Set<groupId> otherwise
+    const [legendVisible, setLegendVisible] = useState(false);
+    const [zoomPopoverAnchor, setZoomPopoverAnchor] = useState(null);
+    // Highlight ring shown after an animated zoom-to-point completes.
+    const [highlightRing, setHighlightRing] = useState(null); // { cx, cy, r, key }
 
     // ── Classification and default bounds ────────────────────────
     const classification = useMemo(() => classifyPoints(designPoints), [designPoints]);
@@ -230,6 +242,9 @@ export default function DesignPointsPlanView({
     useEffect(() => {
         function onDown(e) {
             if (e.key === 'Escape') {
+                // Let open popovers handle their own Escape — closing
+                // them should NOT also reset the view.
+                if (zoomPopoverAnchor || legendVisible) return;
                 // Two jobs: reset zoom AND (legacy) clear selection.
                 if (defaultViewBox) {
                     setViewBoxState({
@@ -271,7 +286,7 @@ export default function DesignPointsPlanView({
             window.removeEventListener('keydown', onDown);
             window.removeEventListener('keyup', onUp);
         };
-    }, [selectedIds, onSelectionChange, defaultViewBox, isSpaceDown, allowPanZoom]);
+    }, [selectedIds, onSelectionChange, defaultViewBox, isSpaceDown, allowPanZoom, zoomPopoverAnchor, legendVisible]);
 
     // ── Window-scoped pointerup fallback ─────────────────────────
     useEffect(() => {
@@ -294,6 +309,59 @@ export default function DesignPointsPlanView({
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [lasso]);
+
+    // ── Filter visibility ────────────────────────────────────────
+    function isPointVisible(p) {
+        if (!filterState) return true;
+        const gid = classifyPointToGroup(p, classification);
+        return filterState.has(gid);
+    }
+
+    // ── Animated zoom-to-point ───────────────────────────────────
+    function animatedZoomTo(targetPoint, distanceFt) {
+        if (!viewBoxRef.current || !targetPoint) return;
+        const cx = targetPoint.easting;
+        const cy = -targetPoint.northing;
+        const w = distanceFt * 2;
+        const h = distanceFt * 2;
+        const target = { x: cx - w / 2, y: cy - h / 2, w, h };
+        const start = { ...viewBoxRef.current };
+        const startTime = performance.now();
+        const duration = 300;
+
+        if (zoomAnimRef.current != null) cancelAnimationFrame(zoomAnimRef.current);
+
+        function step(now) {
+            const t = Math.min(1, (now - startTime) / duration);
+            // ease-out cubic
+            const eased = 1 - Math.pow(1 - t, 3);
+            const interp = {
+                x: start.x + (target.x - start.x) * eased,
+                y: start.y + (target.y - start.y) * eased,
+                w: start.w + (target.w - start.w) * eased,
+                h: start.h + (target.h - start.h) * eased,
+            };
+            viewBoxRef.current = interp;
+            setViewBoxState(interp);
+            if (t < 1) {
+                zoomAnimRef.current = requestAnimationFrame(step);
+            } else {
+                zoomAnimRef.current = null;
+                // Post-zoom highlight pulse
+                const ringR = Math.min(target.w, target.h) * 0.18;
+                setHighlightRing({ cx, cy, r: ringR, key: Date.now() });
+                setTimeout(() => setHighlightRing(null), 900);
+            }
+        }
+        zoomAnimRef.current = requestAnimationFrame(step);
+    }
+
+    // Cleanup any in-flight zoom animation on unmount.
+    useEffect(() => {
+        return () => {
+            if (zoomAnimRef.current != null) cancelAnimationFrame(zoomAnimRef.current);
+        };
+    }, []);
 
     // ── Wheel zoom (non-passive, attached manually so preventDefault works) ──
     //
@@ -604,29 +672,27 @@ export default function DesignPointsPlanView({
 
     if (isEmpty) {
         return (
-            <div
-                ref={containerRef}
-                style={{
-                    position: 'relative',
-                    width: '100%',
-                    height: '100%',
-                    minHeight: '300px',
-                    userSelect: 'none',
-                    WebkitUserSelect: 'none',
-                    MozUserSelect: 'none',
-                    msUserSelect: 'none',
-                    touchAction: 'none',
-                    overscrollBehavior: 'contain',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: 'var(--bg-dark)',
-                    color: 'var(--text-muted)',
-                }}
-            >
-                <span style={{ fontSize: '13px' }}>
-                    No design points loaded for this project yet.
-                </span>
+            <div ref={outerWrapperRef} style={outerWrapperStyle}>
+                <div
+                    ref={containerRef}
+                    style={{
+                        position: 'relative',
+                        width: '100%',
+                        flex: 1,
+                        minHeight: '300px',
+                        touchAction: 'none',
+                        overscrollBehavior: 'contain',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: 'var(--bg-dark)',
+                        color: 'var(--text-muted)',
+                    }}
+                >
+                    <span style={{ fontSize: '13px' }}>
+                        No design points loaded for this project yet.
+                    </span>
+                </div>
             </div>
         );
     }
@@ -635,14 +701,22 @@ export default function DesignPointsPlanView({
     const vb = viewBoxState;
     const currentMaxDim = Math.max(vb.w, vb.h);
 
+    // Stage 8.5b-polish: soft size boost when zoomed in so points grow
+    // with user intent. Capped at ~2× so extreme zoom doesn't balloon the
+    // glyphs. At default zoom, sizeBoost == 1 (unchanged from 8.5b-core).
+    const defaultMaxDim = Math.max(defaultViewBox.vbW, defaultViewBox.vbH);
+    const zoomRatio = defaultMaxDim / currentMaxDim;
+    const sizeBoost = 1 + Math.min(Math.log2(Math.max(1, zoomRatio)) * 0.3, 1);
+
     // Size hierarchy: unselected (1x) < hovered (1.5x) < selected (2x).
-    // Keyed off the CURRENT viewBox so a zoom-in doesn't inflate points.
-    const baseRadius = currentMaxDim * 0.006;
-    const hoverRadius = currentMaxDim * 0.009;
-    const selectedRadius = currentMaxDim * 0.012;
+    // Keyed off the CURRENT viewBox so a zoom-in doesn't inflate points
+    // unless sizeBoost says so.
+    const baseRadius = currentMaxDim * 0.006 * sizeBoost;
+    const hoverRadius = currentMaxDim * 0.009 * sizeBoost;
+    const selectedRadius = currentMaxDim * 0.012 * sizeBoost;
     // Stage 8.5b: control triangles at 2× base so section corners and
     // benchmarks stand out immediately from the staking cluster.
-    const controlSize = currentMaxDim * 0.012;
+    const controlSize = currentMaxDim * 0.012 * sizeBoost;
 
     // Grid step adapts to current visible extent.
     const gridStep = pickGridStep(Math.max(vb.w, vb.h));
@@ -673,11 +747,13 @@ export default function DesignPointsPlanView({
     // ── Label-at-zoom threshold (Stage 8.5b) ─────────────────────
     // Approximate average point spacing on screen; show labels once the
     // canvas has enough room that text won't overlap its neighbor. The
-    // count is taken over points CURRENTLY IN VIEW so zoom naturally
-    // reveals labels as the user narrows the frame.
+    // count is taken over points CURRENTLY IN VIEW AND PASSING THE
+    // FILTER so zoom naturally reveals labels and filter chips reduce
+    // the density calculation too.
     const svgPerPx = vb.w / (svgWidthPx || 1);
     const pointsInView = designPoints.filter((p) => {
         if (typeof p.northing !== 'number' || typeof p.easting !== 'number') return false;
+        if (!isPointVisible(p)) return false;
         const x = p.easting;
         const y = -p.northing;
         return x >= vb.x && x <= vb.x + vb.w && y >= vb.y && y <= vb.y + vb.h;
@@ -685,8 +761,11 @@ export default function DesignPointsPlanView({
     const visibleCount = Math.max(1, pointsInView.length);
     const screenSpacingPx = svgWidthPx / Math.sqrt(visibleCount);
     const showLabels = screenSpacingPx > 40;
-    const labelSize = 10 * svgPerPx;
-    const labelSizeSmall = 9 * svgPerPx;
+    // Labels scale more conservatively than points — half the boost,
+    // capped at 2× original size.
+    const labelBoost = Math.min(1 + (sizeBoost - 1) * 0.5, 2);
+    const labelSize = 10 * svgPerPx * labelBoost;
+    const labelSizeSmall = 9 * svgPerPx * labelBoost;
     const labelHalo = Math.max(2 * svgPerPx, 0.3);
     const labelOffsetX = baseRadius * 1.6;
 
@@ -701,24 +780,34 @@ export default function DesignPointsPlanView({
             : 'crosshair';
 
     return (
-        <div
-            ref={containerRef}
-            style={{
-                position: 'relative',
-                width: '100%',
-                height: '100%',
-                userSelect: 'none',
-                WebkitUserSelect: 'none',
-                MozUserSelect: 'none',
-                msUserSelect: 'none',
-                touchAction: 'none',
-                // Stop wheel events from chaining to a scrollable ancestor
-                // (app-main-content has overflow: auto). Combined with the
-                // container-scoped wheel listener, this guarantees the
-                // canvas always sees its own scroll gestures.
-                overscrollBehavior: 'contain',
-            }}
-        >
+        <div ref={outerWrapperRef} style={outerWrapperStyle}>
+            <CanvasToolbar
+                points={designPoints}
+                classification={classification}
+                filterState={filterState}
+                onFilterChange={setFilterState}
+                legendVisible={legendVisible}
+                onLegendToggle={() => setLegendVisible((v) => !v)}
+                onZoomPopoverToggle={(rect) =>
+                    setZoomPopoverAnchor((prev) => (prev ? null : rect))
+                }
+            />
+
+            <div
+                ref={containerRef}
+                style={{
+                    position: 'relative',
+                    width: '100%',
+                    flex: 1,
+                    minHeight: 0,
+                    touchAction: 'none',
+                    // Stop wheel events from chaining to a scrollable ancestor
+                    // (app-main-content has overflow: auto). Combined with the
+                    // container-scoped wheel listener, this guarantees the
+                    // canvas always sees its own scroll gestures.
+                    overscrollBehavior: 'contain',
+                }}
+            >
             <svg
                 ref={svgRef}
                 viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`}
@@ -793,6 +882,7 @@ export default function DesignPointsPlanView({
                 {showControlPoints &&
                     controlPoints.map((p) => {
                         if (typeof p.northing !== 'number' || typeof p.easting !== 'number') return null;
+                        if (!isPointVisible(p)) return null;
                         const isHovered = hoveredId === p.id;
                         const r = controlSize;
                         const cx = p.easting;
@@ -828,6 +918,7 @@ export default function DesignPointsPlanView({
                 <g>
                     {stakingPoints.map((p) => {
                         if (typeof p.northing !== 'number' || typeof p.easting !== 'number') return null;
+                        if (!isPointVisible(p)) return null;
                         const isSelected = selectedIds && selectedIds.has(p.id);
                         const isHovered = hoveredId === p.id;
                         const statusKey = pointStatusMap ? pointStatusMap.get(p.id) : null;
@@ -881,48 +972,104 @@ export default function DesignPointsPlanView({
                     })}
                 </g>
 
-                {/* Labels at zoom (Stage 8.5b). Rendered AFTER points so
-                    text sits on top; halo via paint-order stroke keeps
-                    them readable over any point color. */}
-                {showLabels && (
-                    <g style={{ pointerEvents: 'none' }}>
-                        {pointsInView.map((p) => {
-                            const cx = p.easting + labelOffsetX;
-                            const cy = -p.northing;
-                            return (
-                                <g key={`lbl-${p.id}`}>
+                {/* Labels at zoom (Stage 8.5b) with collision avoidance
+                    (Stage 8.5b-polish). Iterate in point_id-sorted order
+                    so lowest-numbered point wins when dense. Track
+                    rendered bboxes and skip any that would overlap. */}
+                {showLabels && (() => {
+                    const sorted = [...pointsInView].sort((a, b) =>
+                        String(a.point_id || '').localeCompare(
+                            String(b.point_id || ''),
+                            undefined,
+                            { numeric: true },
+                        ),
+                    );
+                    // Monospace char width ≈ 0.6 × font size.
+                    const charW = labelSize * 0.6;
+                    const charWSmall = labelSizeSmall * 0.6;
+                    const rendered = [];
+                    const nodes = [];
+                    for (const p of sorted) {
+                        const cxText = p.easting + labelOffsetX;
+                        const cyText = -p.northing;
+                        const len1 = String(p.point_id || '').length * charW;
+                        const len2 = p.feature_code
+                            ? String(p.feature_code).length * charWSmall
+                            : 0;
+                        const bw = Math.max(len1, len2) + labelSize * 0.4;
+                        const bh = labelSize + (p.feature_code ? labelSizeSmall * 1.3 : 0) + labelSize * 0.3;
+                        const bx = cxText - labelSize * 0.2;
+                        const by = cyText - labelSize * 1.2;
+                        const overlap = rendered.some(
+                            (r) =>
+                                !(bx + bw < r.x || r.x + r.w < bx || by + bh < r.y || r.y + r.h < by),
+                        );
+                        if (overlap) continue;
+                        rendered.push({ x: bx, y: by, w: bw, h: bh });
+                        nodes.push(
+                            <g key={`lbl-${p.id}`}>
+                                <text
+                                    x={cxText}
+                                    y={cyText - labelSize * 0.2}
+                                    fill="var(--text-main)"
+                                    stroke="rgba(10, 15, 30, 0.85)"
+                                    strokeWidth={labelHalo}
+                                    paintOrder="stroke"
+                                    fontSize={labelSize}
+                                    fontFamily="'JetBrains Mono', monospace"
+                                    textAnchor="start"
+                                >
+                                    {p.point_id}
+                                </text>
+                                {p.feature_code && (
                                     <text
-                                        x={cx}
-                                        y={cy - labelSize * 0.2}
-                                        fill="var(--text-main)"
+                                        x={cxText}
+                                        y={cyText + labelSizeSmall * 1.1}
+                                        fill="var(--text-muted)"
                                         stroke="rgba(10, 15, 30, 0.85)"
                                         strokeWidth={labelHalo}
                                         paintOrder="stroke"
-                                        fontSize={labelSize}
+                                        fontSize={labelSizeSmall}
                                         fontFamily="'JetBrains Mono', monospace"
                                         textAnchor="start"
                                     >
-                                        {p.point_id}
+                                        {p.feature_code}
                                     </text>
-                                    {p.feature_code && (
-                                        <text
-                                            x={cx}
-                                            y={cy + labelSizeSmall * 1.1}
-                                            fill="var(--text-muted)"
-                                            stroke="rgba(10, 15, 30, 0.85)"
-                                            strokeWidth={labelHalo}
-                                            paintOrder="stroke"
-                                            fontSize={labelSizeSmall}
-                                            fontFamily="'JetBrains Mono', monospace"
-                                            textAnchor="start"
-                                        >
-                                            {p.feature_code}
-                                        </text>
-                                    )}
-                                </g>
-                            );
-                        })}
-                    </g>
+                                )}
+                            </g>,
+                        );
+                    }
+                    return <g style={{ pointerEvents: 'none' }}>{nodes}</g>;
+                })()}
+
+                {/* Highlight ring — brief pulse after animated zoom-to */}
+                {highlightRing && (
+                    <circle
+                        key={highlightRing.key}
+                        cx={highlightRing.cx}
+                        cy={highlightRing.cy}
+                        r={0}
+                        fill="none"
+                        stroke="var(--brand-amber)"
+                        strokeWidth="2"
+                        vectorEffect="non-scaling-stroke"
+                        pointerEvents="none"
+                    >
+                        <animate
+                            attributeName="r"
+                            from="0"
+                            to={highlightRing.r * 2}
+                            dur="0.8s"
+                            fill="freeze"
+                        />
+                        <animate
+                            attributeName="opacity"
+                            from="1"
+                            to="0"
+                            dur="0.8s"
+                            fill="freeze"
+                        />
+                    </circle>
                 )}
 
                 {/* North arrow (top-right of current viewBox) */}
@@ -1003,6 +1150,27 @@ export default function DesignPointsPlanView({
                     isControl={hoveredIsControl}
                 />
             )}
+
+            {/* Feature legend — floating panel, positioned absolute over
+                the canvas area. Hidden by default; toggled via toolbar. */}
+            <FeatureLegend
+                visible={legendVisible}
+                onClose={() => setLegendVisible(false)}
+                filterState={filterState}
+            />
+            </div>
+
+            {/* Zoom-to-point popover — portal, positioned against the
+                toolbar button's screen rect. */}
+            <ZoomToPointPopover
+                visible={!!zoomPopoverAnchor}
+                anchorRect={zoomPopoverAnchor}
+                points={designPoints}
+                onClose={() => setZoomPopoverAnchor(null)}
+                onZoom={(point, distance) => {
+                    animatedZoomTo(point, distance);
+                }}
+            />
         </div>
     );
 }
@@ -1290,6 +1458,21 @@ const emptyCanvas = {
     minHeight: '300px',
     backgroundColor: 'var(--bg-dark)',
     color: 'var(--text-muted)',
+};
+
+// Outer flex column: toolbar (fixed height) + canvas area (flex: 1).
+// user-select on the outer element so text doesn't highlight during
+// lasso drags on children.
+const outerWrapperStyle = {
+    position: 'relative',
+    width: '100%',
+    height: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+    userSelect: 'none',
+    WebkitUserSelect: 'none',
+    MozUserSelect: 'none',
+    msUserSelect: 'none',
 };
 
 const panBadgeStyle = {

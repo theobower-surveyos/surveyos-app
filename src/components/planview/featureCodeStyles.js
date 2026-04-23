@@ -90,6 +90,43 @@ const UNKNOWN_STYLE = Object.freeze({
     unknown: true,
 });
 
+// Human-readable names for the legend panel. Feature codes not listed
+// here fall back to the code itself in the legend.
+export const FEATURE_NAMES = Object.freeze({
+    // Water
+    WL: 'Water Line', WV: 'Water Valve', FH: 'Fire Hydrant', WM: 'Water Meter',
+    // Storm
+    SD: 'Storm Drain', SDMH: 'Storm Manhole', SDI: 'Storm Inlet', SCB: 'Storm Catch Basin',
+    // Sanitary
+    SS: 'Sanitary Sewer', SSMH: 'Sanitary Manhole', SCO: 'Sewer Cleanout',
+    // Gas
+    GL: 'Gas Line', GV: 'Gas Valve', GM: 'Gas Meter',
+    // Electric
+    EL: 'Electric Line', ET: 'Electric Transformer', EV: 'Electric Vault',
+    // Telecom
+    TPED: 'Telephone Pedestal', TL: 'Telecom Line', FO: 'Fiber Optic',
+    // Lighting / Signage
+    LP: 'Light Pole', SP: 'Sign Post',
+    // Curb / Concrete
+    TBC: 'Top Back of Curb', EP: 'Edge of Pavement', EW: 'Edge of Walk',
+    CL: 'Centerline', BC: 'Back of Curb', CR: 'Curb Return', WC: 'Walk Corner',
+    // Grading
+    FG: 'Finish Grade', RG: 'Rough Grade', SG: 'Subgrade',
+    // Trees
+    CTR: 'Coniferous Tree', DTR: 'Deciduous Tree', TR: 'Tree',
+    // Structures
+    BLD: 'Building', COL: 'Column',
+});
+
+/**
+ * @param {string | null | undefined} code
+ * @returns {string} human-readable name, falls back to the code itself
+ */
+export function featureName(code) {
+    const trimmed = (code || '').trim().toUpperCase();
+    return FEATURE_NAMES[trimmed] || trimmed || 'Unknown';
+}
+
 /**
  * Resolve a feature-code string to its visual style. Matches the exact
  * code first (case-insensitive, trimmed), then falls back to the first
