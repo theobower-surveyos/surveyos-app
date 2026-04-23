@@ -3,6 +3,7 @@ import { classifyPoints } from './planview/pointClassification.js';
 import { resolveFeatureStyle } from './planview/featureCodeStyles.js';
 import { classifyPointToGroup } from './planview/featureCodeGroups.js';
 import CanvasToolbar from './planview/CanvasToolbar.jsx';
+import FeatureLegend from './planview/FeatureLegend.jsx';
 
 // ─── DesignPointsPlanView ───────────────────────────────────────────────
 // SVG canvas showing every design point in survey coordinate space.
@@ -173,6 +174,8 @@ export default function DesignPointsPlanView({
     // Stage 8.5b-polish commit 1 — feature-group filter chips. null = all
     // groups active; Set<groupId> = only those listed are rendered.
     const [filterState, setFilterState] = useState(null);
+    // Stage 8.5b-polish commit 2 — floating feature-legend panel.
+    const [legendVisible, setLegendVisible] = useState(false);
 
     // ── Classification and default bounds ────────────────────────
     const classification = useMemo(() => classifyPoints(designPoints), [designPoints]);
@@ -737,6 +740,8 @@ export default function DesignPointsPlanView({
                 classification={classification}
                 filterState={filterState}
                 onFilterChange={setFilterState}
+                legendVisible={legendVisible}
+                onLegendToggle={() => setLegendVisible((v) => !v)}
             />
             <div
                 ref={containerRef}
@@ -1026,6 +1031,16 @@ export default function DesignPointsPlanView({
                     </text>
                 </g>
             </svg>
+
+            {/* Feature legend — floating panel anchored top-right inside
+                the canvas area. Must be a CHILD of containerRef (which
+                is position:relative) because the legend uses
+                position:absolute to pin itself. */}
+            <FeatureLegend
+                visible={legendVisible}
+                onClose={() => setLegendVisible(false)}
+                filterState={filterState}
+            />
 
             {/* Pan-mode badge */}
             {isSpaceDown && allowPanZoom && (

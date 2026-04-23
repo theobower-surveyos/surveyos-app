@@ -90,6 +90,29 @@ const UNKNOWN_STYLE = Object.freeze({
     unknown: true,
 });
 
+// Human-readable name for a feature code. Used by FeatureLegend. Falls
+// back to the code itself if no name is known.
+const FEATURE_NAMES = {
+    WL: 'Water line', WV: 'Water valve', FH: 'Fire hydrant', WM: 'Water meter',
+    SD: 'Storm drain', SDMH: 'Storm manhole', SDI: 'Storm inlet', SCB: 'Catch basin',
+    SS: 'Sanitary sewer', SSMH: 'Sanitary manhole', SCO: 'Sewer cleanout',
+    GL: 'Gas line', GV: 'Gas valve', GM: 'Gas meter',
+    EL: 'Electric line', ET: 'Electric transformer', EV: 'Electric vault',
+    TPED: 'Telephone pedestal', TL: 'Telecom line', FO: 'Fiber optic',
+    LP: 'Light pole', SP: 'Sign post',
+    TBC: 'Top back of curb', EP: 'Edge of pavement', EW: 'Edge of walk',
+    CL: 'Centerline', BC: 'Back of curb', CR: 'Curb return', WC: 'Walk corner',
+    FG: 'Finish grade', RG: 'Rough grade', SG: 'Subgrade',
+    CTR: 'Coniferous tree', DTR: 'Deciduous tree', TR: 'Tree (generic)',
+    BLD: 'Building', COL: 'Column',
+};
+
+export function featureName(code) {
+    if (typeof code !== 'string') return '';
+    const trimmed = code.trim().toUpperCase();
+    return FEATURE_NAMES[trimmed] || trimmed;
+}
+
 /**
  * Resolve a feature-code string to its visual style. Matches the exact
  * code first (case-insensitive, trimmed), then falls back to the first

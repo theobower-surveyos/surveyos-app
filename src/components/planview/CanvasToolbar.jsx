@@ -20,6 +20,8 @@ export default function CanvasToolbar({
     classification,
     filterState,        // Set<groupId> | null (null = all active)
     onFilterChange,
+    legendVisible,
+    onLegendToggle,
 }) {
     const counts = useMemo(() => {
         const c = {};
@@ -218,6 +220,24 @@ export default function CanvasToolbar({
                         </button>
                     );
                 })}
+            </div>
+
+            <div className="ct-actions">
+                <button
+                    type="button"
+                    className={`ct-btn ${legendVisible ? 'active' : ''}`}
+                    onClick={onLegendToggle}
+                    title={legendVisible ? 'Hide feature legend' : 'Show feature legend'}
+                >
+                    <span className="ct-legend-swatches" aria-hidden="true">
+                        <span style={{ background: '#F97316' }} />
+                        <span style={{ background: '#2563EB' }} />
+                        <span style={{ background: '#14B8A6' }} />
+                        <span style={{ background: '#16A34A' }} />
+                        <span style={{ background: '#9CA3AF' }} />
+                    </span>
+                    <span>Legend</span>
+                </button>
             </div>
         </div>
     );
