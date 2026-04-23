@@ -54,11 +54,23 @@ export default function ZoomToPointPopover({
         if (!visible || !anchorRect) return;
         const vw = window.innerWidth;
         const vh = window.innerHeight;
-        const margin = 8;
-        let left = Math.min(
-            Math.max(margin, anchorRect.left),
-            vw - POP_WIDTH - margin,
-        );
+        const margin = 16;
+
+        // Anchor horizontally: if the button is in the right half of the
+        // viewport, align the popover's right edge to the button's right
+        // edge (drops down-left from the button). Otherwise, align its
+        // left edge to the button's left edge (drops down-right).
+        const buttonMidX = (anchorRect.left + anchorRect.right) / 2;
+        let left;
+        if (buttonMidX > vw / 2) {
+            left = anchorRect.right - POP_WIDTH;
+        } else {
+            left = anchorRect.left;
+        }
+        // Clamp to viewport
+        left = Math.min(Math.max(margin, left), vw - POP_WIDTH - margin);
+
+        // Vertical: prefer below, flip above if not enough room
         const spaceBelow = vh - anchorRect.bottom;
         const spaceAbove = anchorRect.top;
         const fitsBelow = spaceBelow >= ESTIMATED_H + POP_GAP + margin;

@@ -675,7 +675,7 @@ export default function DesignPointsPlanView({
             } else {
                 zoomAnimRef.current = null;
                 setHighlightId(point.id);
-                setTimeout(() => setHighlightId(null), 1500);
+                setTimeout(() => setHighlightId(null), 3000);
             }
         }
 
@@ -848,9 +848,17 @@ export default function DesignPointsPlanView({
             >
             <style>{`
                 @keyframes findPointRing {
-                    0%   { opacity: 1; transform: scale(0.6); }
-                    30%  { opacity: 1; transform: scale(1); }
-                    100% { opacity: 0; transform: scale(1.4); }
+                    0%   { opacity: 0;   transform: scale(0.4); }
+                    8%   { opacity: 1;   transform: scale(1); }
+                    20%  { opacity: 0.95; transform: scale(1.05); }
+                    100% { opacity: 0;   transform: scale(1.8); }
+                }
+
+                @keyframes findPointGlow {
+                    0%   { opacity: 0;   transform: scale(0.4); }
+                    6%   { opacity: 0.55; transform: scale(1); }
+                    35%  { opacity: 0;   transform: scale(1.6); }
+                    100% { opacity: 0;   transform: scale(1.6); }
                 }
             `}</style>
             <svg
@@ -1062,29 +1070,51 @@ export default function DesignPointsPlanView({
                     </g>
                 )}
 
-                {/* Find-point highlight ring (Stage 8.5b-polish commit 3).
-                    Rendered after labels so it draws on top. Scales about its
-                    own center via transform-box: fill-box. */}
+                {/* Find-point highlight ring (Stage 8.5b-polish commit 3b).
+                    Two layers: a soft filled glow flashes at onset, a
+                    thicker stroked ring pulses in then expands and fades
+                    over 3s. Both scale about their own center. */}
                 {highlightId && (() => {
                     const p = designPoints.find((pt) => pt.id === highlightId);
                     if (!p || typeof p.northing !== 'number' || typeof p.easting !== 'number') return null;
-                    const ringR = Math.max(baseRadius * 3, currentMaxDim * 0.015);
+                    const ringR = Math.max(baseRadius * 3.5, currentMaxDim * 0.018);
+                    const glowR = ringR * 1.2;
+                    const ringStroke = Math.max(5 * svgPerPx, 1.2);
+                    const commonCircleProps = {
+                        cx: p.easting,
+                        cy: -p.northing,
+                        style: {
+                            transformBox: 'fill-box',
+                            transformOrigin: 'center',
+                            pointerEvents: 'none',
+                        },
+                    };
                     return (
-                        <circle
-                            cx={p.easting}
-                            cy={-p.northing}
-                            r={ringR}
-                            fill="none"
-                            stroke="var(--brand-amber)"
-                            strokeWidth={Math.max(2 * svgPerPx, 0.4)}
-                            vectorEffect="non-scaling-stroke"
-                            style={{
-                                animation: 'findPointRing 1500ms ease-out forwards',
-                                transformBox: 'fill-box',
-                                transformOrigin: 'center',
-                                pointerEvents: 'none',
-                            }}
-                        />
+                        <g style={{ pointerEvents: 'none' }}>
+                            {/* Soft glow pulse — fades fastest, provides initial flash */}
+                            <circle
+                                {...commonCircleProps}
+                                r={glowR}
+                                fill="var(--brand-amber)"
+                                style={{
+                                    ...commonCircleProps.style,
+                                    animation: 'findPointGlow 3000ms ease-out forwards',
+                                }}
+                            />
+                            {/* Main ring — thicker, stays visible longer */}
+                            <circle
+                                {...commonCircleProps}
+                                r={ringR}
+                                fill="none"
+                                stroke="var(--brand-amber)"
+                                strokeWidth={ringStroke}
+                                vectorEffect="non-scaling-stroke"
+                                style={{
+                                    ...commonCircleProps.style,
+                                    animation: 'findPointRing 3000ms ease-out forwards',
+                                }}
+                            />
+                        </g>
                     );
                 })()}
 
