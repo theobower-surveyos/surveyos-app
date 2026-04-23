@@ -43,7 +43,10 @@ const CONTROL_CODES_EXACT = new Set([
     'BRASS',
     'BCC',
     'SCS',
-    'WC',       // Witness Corner feature code (distinct from the WC stake-type letter)
+    // Note: WC was previously in this set (as "Witness Corner") but has
+    // been promoted to featureCodeStyles.js as "walk corner" (magenta
+    // square) at Theo's request — 8.5b redefined it for the curb/concrete
+    // family. Witness-corner semantics are covered by WIT below.
     'WIT',
     'PROP',     // Property corner
 ]);

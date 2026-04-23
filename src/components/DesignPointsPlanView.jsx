@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { classifyPoints } from './planview/pointClassification.js';
+import { resolveFeatureStyle } from './planview/featureCodeStyles.js';
 
 // ─── DesignPointsPlanView ───────────────────────────────────────────────
 // SVG canvas showing every design point in survey coordinate space.
@@ -639,7 +640,9 @@ export default function DesignPointsPlanView({
     const baseRadius = currentMaxDim * 0.006;
     const hoverRadius = currentMaxDim * 0.009;
     const selectedRadius = currentMaxDim * 0.012;
-    const controlSize = currentMaxDim * 0.0072; // 1.2× staking base
+    // Stage 8.5b: control triangles at 2× base so section corners and
+    // benchmarks stand out immediately from the staking cluster.
+    const controlSize = currentMaxDim * 0.012;
 
     // Grid step adapts to current visible extent.
     const gridStep = pickGridStep(Math.max(vb.w, vb.h));
@@ -666,6 +669,26 @@ export default function DesignPointsPlanView({
     const sbPadY = vb.h * 0.06;
     const sbX = vb.x + sbPadX;
     const sbY = vb.y + vb.h - sbPadY;
+
+    // ── Label-at-zoom threshold (Stage 8.5b) ─────────────────────
+    // Approximate average point spacing on screen; show labels once the
+    // canvas has enough room that text won't overlap its neighbor. The
+    // count is taken over points CURRENTLY IN VIEW so zoom naturally
+    // reveals labels as the user narrows the frame.
+    const svgPerPx = vb.w / (svgWidthPx || 1);
+    const pointsInView = designPoints.filter((p) => {
+        if (typeof p.northing !== 'number' || typeof p.easting !== 'number') return false;
+        const x = p.easting;
+        const y = -p.northing;
+        return x >= vb.x && x <= vb.x + vb.w && y >= vb.y && y <= vb.y + vb.h;
+    });
+    const visibleCount = Math.max(1, pointsInView.length);
+    const screenSpacingPx = svgWidthPx / Math.sqrt(visibleCount);
+    const showLabels = screenSpacingPx > 40;
+    const labelSize = 10 * svgPerPx;
+    const labelSizeSmall = 9 * svgPerPx;
+    const labelHalo = Math.max(2 * svgPerPx, 0.3);
+    const labelOffsetX = baseRadius * 1.6;
 
     const hoveredPoint = hoveredId ? designPoints.find((p) => p.id === hoveredId) : null;
     const hoveredIsControl =
@@ -796,7 +819,12 @@ export default function DesignPointsPlanView({
                         );
                     })}
 
-                {/* Staking points */}
+                {/* Staking points — shape + color keyed by feature code
+                    (Stage 8.5b). Precedence: SELECTED amber > STATUS color
+                    > FEATURE_CODE color > default teal. Hover swaps to
+                    teal-light only in the default branch; status- and
+                    feature-colored points keep their identity on hover
+                    and enlarge instead. */}
                 <g>
                     {stakingPoints.map((p) => {
                         if (typeof p.northing !== 'number' || typeof p.easting !== 'number') return null;
@@ -804,36 +832,46 @@ export default function DesignPointsPlanView({
                         const isHovered = hoveredId === p.id;
                         const statusKey = pointStatusMap ? pointStatusMap.get(p.id) : null;
                         const statusStyle = statusKey ? STATUS_STYLES[statusKey] : null;
+                        const featureStyle = resolveFeatureStyle(p.feature_code);
 
                         let fill;
                         let r;
+                        let shape = featureStyle.shape;
                         if (isSelected) {
                             fill = 'var(--brand-amber)';
                             r = selectedRadius;
+                            // Selection keeps the feature shape — users need to
+                            // see WHAT they selected, not just that it's selected.
                         } else if (statusStyle) {
                             fill = statusStyle.fill;
                             const statusR = baseRadius * statusStyle.radiusMul;
                             r = isHovered ? Math.max(hoverRadius, statusR) : statusR;
+                        } else if (!featureStyle.unknown) {
+                            // Feature-code color path. Hover enlarges but preserves
+                            // the identity color — consistent with status-color UX.
+                            fill = featureStyle.color;
+                            const featureR = baseRadius * featureStyle.radiusMultiplier;
+                            r = isHovered ? Math.max(hoverRadius, featureR) : featureR;
                         } else {
                             fill = isHovered ? 'var(--brand-teal-light)' : 'var(--brand-teal)';
                             r = isHovered ? hoverRadius : baseRadius;
                         }
+
                         return (
-                            <circle
+                            <PointGlyph
                                 key={p.id}
-                                data-pid={p.id}
+                                pid={p.id}
+                                shape={shape}
                                 cx={p.easting}
                                 cy={-p.northing}
                                 r={r}
                                 fill={fill}
                                 stroke="rgba(255,255,255,0.15)"
                                 strokeWidth="0.5"
-                                vectorEffect="non-scaling-stroke"
-                                style={{ cursor: isSpaceDown ? 'grab' : 'pointer' }}
-                                onPointerEnter={() => onHoverChange && onHoverChange(p.id)}
-                                onPointerLeave={() => onHoverChange && onHoverChange(null)}
+                                cursor={isSpaceDown ? 'grab' : 'pointer'}
+                                onEnter={() => onHoverChange && onHoverChange(p.id)}
+                                onLeave={() => onHoverChange && onHoverChange(null)}
                                 onClick={(e) => {
-                                    // Swallow clicks that were part of a pan drag.
                                     if (isPanning || isSpaceDown) return;
                                     e.stopPropagation();
                                     togglePoint(p.id);
@@ -842,6 +880,50 @@ export default function DesignPointsPlanView({
                         );
                     })}
                 </g>
+
+                {/* Labels at zoom (Stage 8.5b). Rendered AFTER points so
+                    text sits on top; halo via paint-order stroke keeps
+                    them readable over any point color. */}
+                {showLabels && (
+                    <g style={{ pointerEvents: 'none' }}>
+                        {pointsInView.map((p) => {
+                            const cx = p.easting + labelOffsetX;
+                            const cy = -p.northing;
+                            return (
+                                <g key={`lbl-${p.id}`}>
+                                    <text
+                                        x={cx}
+                                        y={cy - labelSize * 0.2}
+                                        fill="var(--text-main)"
+                                        stroke="rgba(10, 15, 30, 0.85)"
+                                        strokeWidth={labelHalo}
+                                        paintOrder="stroke"
+                                        fontSize={labelSize}
+                                        fontFamily="'JetBrains Mono', monospace"
+                                        textAnchor="start"
+                                    >
+                                        {p.point_id}
+                                    </text>
+                                    {p.feature_code && (
+                                        <text
+                                            x={cx}
+                                            y={cy + labelSizeSmall * 1.1}
+                                            fill="var(--text-muted)"
+                                            stroke="rgba(10, 15, 30, 0.85)"
+                                            strokeWidth={labelHalo}
+                                            paintOrder="stroke"
+                                            fontSize={labelSizeSmall}
+                                            fontFamily="'JetBrains Mono', monospace"
+                                            textAnchor="start"
+                                        >
+                                            {p.feature_code}
+                                        </text>
+                                    )}
+                                </g>
+                            );
+                        })}
+                    </g>
+                )}
 
                 {/* North arrow (top-right of current viewBox) */}
                 <g transform={`translate(${arrowCx}, ${arrowCy})`}>
@@ -923,6 +1005,94 @@ export default function DesignPointsPlanView({
             )}
         </div>
     );
+}
+
+// ── PointGlyph ────────────────────────────────────────────────────────
+// One-stop shape renderer for staking points. Every glyph variant carries
+// data-pid on every primitive so onSvgPointerDown's hit-test finds it
+// regardless of which sub-shape the cursor is over (important for the
+// two-rect `plus` and multi-line shapes). Handlers bind to every
+// primitive too — redundant but simpler than a wrapping <g> that
+// disables child pointer events.
+function PointGlyph({
+    pid,
+    shape,
+    cx,
+    cy,
+    r,
+    fill,
+    stroke,
+    strokeWidth,
+    cursor,
+    onEnter,
+    onLeave,
+    onClick,
+}) {
+    const common = {
+        'data-pid': pid,
+        fill,
+        stroke,
+        strokeWidth,
+        vectorEffect: 'non-scaling-stroke',
+        style: { cursor },
+        onPointerEnter: onEnter,
+        onPointerLeave: onLeave,
+        onClick,
+    };
+
+    switch (shape) {
+        case 'square':
+            return (
+                <rect
+                    x={cx - r}
+                    y={cy - r}
+                    width={r * 2}
+                    height={r * 2}
+                    {...common}
+                />
+            );
+        case 'triangle': {
+            // Upward-pointing equilateral, matches the control-point glyph.
+            const top = `${cx},${cy - r}`;
+            const bl = `${cx - r * 0.87},${cy + r * 0.5}`;
+            const br = `${cx + r * 0.87},${cy + r * 0.5}`;
+            return <polygon points={`${top} ${bl} ${br}`} {...common} />;
+        }
+        case 'plus': {
+            const bar = r * 0.45;
+            return (
+                <>
+                    <rect
+                        x={cx - r}
+                        y={cy - bar / 2}
+                        width={r * 2}
+                        height={bar}
+                        {...common}
+                    />
+                    <rect
+                        x={cx - bar / 2}
+                        y={cy - r}
+                        width={bar}
+                        height={r * 2}
+                        {...common}
+                    />
+                </>
+            );
+        }
+        case 'octagon': {
+            // Regular octagon with edges axis-aligned — rotate vertices by
+            // π/8 from the standard position.
+            const pts = [];
+            for (let i = 0; i < 8; i++) {
+                const ang = (Math.PI / 4) * i + Math.PI / 8;
+                pts.push(`${cx + r * Math.cos(ang)},${cy + r * Math.sin(ang)}`);
+            }
+            return <polygon points={pts.join(' ')} {...common} />;
+        }
+        case 'circle':
+        default:
+            return <circle cx={cx} cy={cy} r={r} {...common} />;
+    }
 }
 
 // ── Tooltip ───────────────────────────────────────────────────────────
