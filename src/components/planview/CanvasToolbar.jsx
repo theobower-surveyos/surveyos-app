@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { FEATURE_GROUPS, classifyPointToGroup } from './featureCodeGroups.js';
 
 // ─── CanvasToolbar ────────────────────────────────────────────────────
@@ -23,6 +23,11 @@ export default function CanvasToolbar({
     legendVisible,
     onLegendToggle,
 }) {
+    // Stage 8.5b-polish commit 2b — empty chips are hidden by default
+    // and revealed via an inline +N / − toggle chip so the toolbar can
+    // wrap cleanly without a horizontal scrollbar.
+    const [showEmpty, setShowEmpty] = useState(false);
+
     const counts = useMemo(() => {
         const c = {};
         for (const g of FEATURE_GROUPS) c[g.id] = 0;
@@ -32,6 +37,9 @@ export default function CanvasToolbar({
         }
         return c;
     }, [points, classification]);
+
+    const hiddenGroups = FEATURE_GROUPS.filter((g) => (counts[g.id] || 0) === 0);
+    const hiddenCount = hiddenGroups.length;
 
     const totalPoints = (points || []).length;
     const allActive = !filterState;
@@ -91,17 +99,11 @@ export default function CanvasToolbar({
                     display: flex;
                     align-items: center;
                     gap: 6px;
+                    row-gap: 6px;
                     flex: 1;
                     min-width: 0;
-                    overflow-x: auto;
-                    overflow-y: hidden;
+                    flex-wrap: wrap;
                     padding: 2px 0;
-                    scrollbar-width: thin;
-                }
-                .ct-chip-row::-webkit-scrollbar { height: 6px; }
-                .ct-chip-row::-webkit-scrollbar-thumb {
-                    background: var(--border-subtle);
-                    border-radius: 3px;
                 }
                 .ct-chip {
                     flex: 0 0 auto;
@@ -138,6 +140,19 @@ export default function CanvasToolbar({
                 .ct-chip.empty {
                     opacity: 0.45;
                     font-size: 11px;
+                }
+                .ct-chip.ct-chip-toggle {
+                    font-family: 'JetBrains Mono', monospace;
+                    font-size: 11.5px;
+                    color: var(--text-muted);
+                    border-style: dashed;
+                    min-width: 34px;
+                    text-align: center;
+                }
+                .ct-chip.ct-chip-toggle:hover {
+                    color: var(--text-main);
+                    border-color: var(--text-muted);
+                    background: rgba(255,255,255,0.03);
                 }
                 .ct-chip-count {
                     margin-left: 5px;
@@ -205,8 +220,9 @@ export default function CanvasToolbar({
                     <span className="ct-chip-count">{totalPoints}</span>
                 </button>
                 {FEATURE_GROUPS.map((g) => {
-                    const active = isActive(g.id);
                     const count = counts[g.id] || 0;
+                    if (count === 0 && !showEmpty) return null;
+                    const active = isActive(g.id);
                     return (
                         <button
                             key={g.id}
@@ -220,6 +236,20 @@ export default function CanvasToolbar({
                         </button>
                     );
                 })}
+                {hiddenCount > 0 && (
+                    <button
+                        type="button"
+                        className="ct-chip ct-chip-toggle"
+                        onClick={() => setShowEmpty((v) => !v)}
+                        title={
+                            showEmpty
+                                ? 'Hide empty groups'
+                                : `Show ${hiddenCount} empty group${hiddenCount === 1 ? '' : 's'}`
+                        }
+                    >
+                        {showEmpty ? '−' : `+${hiddenCount}`}
+                    </button>
+                )}
             </div>
 
             <div className="ct-actions">

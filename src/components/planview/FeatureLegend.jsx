@@ -163,6 +163,7 @@ export default function FeatureLegend({ visible, onClose, filterState }) {
             </div>
 
             <div
+                data-canvas-scroll-region="true"
                 style={{
                     overflowY: 'auto',
                     padding: '10px 12px',

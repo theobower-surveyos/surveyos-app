@@ -335,6 +335,17 @@ export default function DesignPointsPlanView({
         if (!wrapper) return;
 
         function onWheel(e) {
+            // Let overlay UI handle its own scroll when the wheel is over
+            // a designated scroll region (e.g. the FeatureLegend body).
+            // Nested targets (text, svg glyphs inside the legend) resolve
+            // up through closest() so the region detection is robust.
+            if (
+                e.target &&
+                typeof e.target.closest === 'function' &&
+                e.target.closest('[data-canvas-scroll-region]')
+            ) {
+                return;
+            }
             // MUST call preventDefault FIRST — before any ref checks.
             // React's synthetic onWheel prop is always passive in React
             // 17+, so the native listener (this one) with {passive:false}
