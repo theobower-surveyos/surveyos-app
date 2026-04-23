@@ -740,14 +740,26 @@ export default function DesignPointsPlanView({
     const vb = viewBoxState;
     const currentMaxDim = Math.max(vb.w, vb.h);
 
+    // Zoom-responsive point sizing (Stage 8.5b-polish commit 4):
+    // At default (fit-to-staking) zoom, points render at their base size.
+    // As the user zooms in, points grow softly via a log curve so they stay
+    // readable against the narrower viewBox. Cap at 2x boost to avoid
+    // ridiculous dots at extreme zoom. Zoom OUT below default does NOT
+    // shrink points — clamp floor at 1x.
+    const defaultW = defaultViewBox?.vbW || currentMaxDim;
+    const zoomRatio = defaultW / vb.w; // >1 when zoomed in past default
+    const zoomBoost = zoomRatio > 1
+        ? Math.min(2, 1 + Math.log2(zoomRatio) * 0.35)
+        : 1;
+
     // Size hierarchy: unselected (1x) < hovered (1.5x) < selected (2x).
     // Keyed off the CURRENT viewBox so a zoom-in doesn't inflate points.
-    const baseRadius = currentMaxDim * 0.006;
-    const hoverRadius = currentMaxDim * 0.009;
-    const selectedRadius = currentMaxDim * 0.012;
+    const baseRadius = currentMaxDim * 0.006 * zoomBoost;
+    const hoverRadius = currentMaxDim * 0.009 * zoomBoost;
+    const selectedRadius = currentMaxDim * 0.012 * zoomBoost;
     // Stage 8.5b: control triangles at 2× base so section corners and
     // benchmarks stand out immediately from the staking cluster.
-    const controlSize = currentMaxDim * 0.012;
+    const controlSize = currentMaxDim * 0.012 * zoomBoost;
 
     // Grid step adapts to current visible extent.
     const gridStep = pickGridStep(Math.max(vb.w, vb.h));
@@ -794,6 +806,61 @@ export default function DesignPointsPlanView({
     const labelSizeSmall = 9 * svgPerPx;
     const labelHalo = Math.max(2 * svgPerPx, 0.3);
     const labelOffsetX = baseRadius * 1.6;
+
+    // Label collision avoidance (Stage 8.5b-polish commit 4):
+    // First-render-wins AABB overlap test. Points are sorted by point_id
+    // ascending so the lowest-numbered point in a cluster keeps its label;
+    // subsequent points whose label box would overlap a placed label get
+    // suppressed. We keep the POINT visible — only the label text is hidden.
+    //
+    // Each label occupies approximately a rectangle of (labelW x labelH)
+    // in viewBox (survey) units, positioned to the right of the point
+    // glyph. Small padding prevents labels from kissing.
+    const labelsToRender = (() => {
+        if (!showLabels) return null;
+        const sorted = [...pointsInView].sort((a, b) => {
+            const na = Number(a.point_id);
+            const nb = Number(b.point_id);
+            if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
+            return String(a.point_id).localeCompare(String(b.point_id));
+        });
+
+        const charW = labelSize * 0.55; // rough monospace glyph advance
+        const paddingX = labelSize * 0.4;
+        const paddingY = labelSize * 0.3;
+        const placed = [];
+        const survivors = new Set();
+
+        for (const p of sorted) {
+            const pidLen = String(p.point_id || '').length || 1;
+            const codeLen = p.feature_code ? String(p.feature_code).length : 0;
+            const labelW = Math.max(pidLen, codeLen) * charW + paddingX;
+            const labelH = (p.feature_code ? (labelSize + labelSizeSmall * 1.1) : labelSize) + paddingY;
+
+            const left = p.easting + labelOffsetX;
+            const top = -p.northing - labelSize * 0.5;
+            const box = {
+                x1: left,
+                y1: top,
+                x2: left + labelW,
+                y2: top + labelH,
+            };
+
+            let collides = false;
+            for (const pb of placed) {
+                if (!(box.x2 < pb.x1 || box.x1 > pb.x2 || box.y2 < pb.y1 || box.y1 > pb.y2)) {
+                    collides = true;
+                    break;
+                }
+            }
+            if (!collides) {
+                placed.push(box);
+                survivors.add(p.id);
+            }
+        }
+
+        return survivors;
+    })();
 
     const hoveredPoint = hoveredId ? designPoints.find((p) => p.id === hoveredId) : null;
     const hoveredIsControl =
@@ -1028,9 +1095,10 @@ export default function DesignPointsPlanView({
                 {/* Labels at zoom (Stage 8.5b). Rendered AFTER points so
                     text sits on top; halo via paint-order stroke keeps
                     them readable over any point color. */}
-                {showLabels && (
+                {showLabels && labelsToRender && (
                     <g style={{ pointerEvents: 'none' }}>
                         {pointsInView.map((p) => {
+                            if (!labelsToRender.has(p.id)) return null;
                             if (!isGroupVisible(pointGroups.get(p.id))) return null;
                             const cx = p.easting + labelOffsetX;
                             const cy = -p.northing;
