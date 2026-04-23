@@ -107,6 +107,7 @@ export default function FeatureLegend({ visible, onClose, filterState }) {
         <div
             role="dialog"
             aria-label="Feature legend"
+            data-canvas-scroll-region="true"
             style={{
                 position: 'absolute',
                 top: '12px',
@@ -163,7 +164,6 @@ export default function FeatureLegend({ visible, onClose, filterState }) {
             </div>
 
             <div
-                data-canvas-scroll-region="true"
                 style={{
                     overflowY: 'auto',
                     padding: '10px 12px',
