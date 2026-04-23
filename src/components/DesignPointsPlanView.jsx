@@ -744,8 +744,6 @@ export default function DesignPointsPlanView({
                 flexDirection: 'column',
                 width: '100%',
                 height: '100%',
-                padding: '0 16px 12px',
-                boxSizing: 'border-box',
             }}
         >
             <CanvasToolbar
