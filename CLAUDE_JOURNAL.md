@@ -91,49 +91,33 @@ These are canonical. Do not deviate without explicit discussion:
 | 8 | Crew PWA infrastructure (service worker, IndexedDB, sync manager) | ✅ Shipped (`3d7b794`) |
 | 8.5a | Plan view production-scale (pan/zoom, control detection, intelligent default zoom) | ✅ Shipped (`9438d45`) |
 | 8.5b-core | Feature-code color palette, shape differentiation, control triangle 2x, labels | ✅ Shipped (`9cb8dfc`) |
-| **8.5b-polish** | **Filter chips, legend, zoom-to-point, label collision, zoom-responsive sizing** | **🔧 IN PROGRESS (commits 1, 2, 2b shipped; commit 2c reverted)** |
-| 9 | Crew field view UI (mobile-first) + push notifications (iOS 16.4+ caveat) | ⏳ Pending |
+| 8.5b-polish | Filter chips, legend, zoom-to-point, label collision, zoom-responsive sizing | ✅ Shipped (`5418c8f`) |
+| **9** | **Crew field view UI (mobile-first) + push notifications (iOS 16.4+ caveat)** | **⏳ Next** |
 | 10 | Crew session upload + field-fit workflow + QC compute kickoff | ⏳ Pending |
 | 11 | Accuracy narratives (Supabase edge function + pg_cron, Claude-generated summaries) | ⏳ Pending |
 | 12 | Integration (CommandCenter tile, nav wiring, MorningBrief, client portal) | ⏳ Pending |
-| 13 | Testing + polish (refactor, CASCADE fix, seeder fix, file-size refactor, off-view indicator, stacked points UX) | ⏳ Pending |
+| 13 | Testing + polish (refactor, CASCADE fix, seeder fix, file-size refactor, off-view indicator, stacked points UX, Safari deep-zoom label fix, control-point selectability, export controls CSV, grid tiering) | ⏳ Pending |
 
-**Progress:** 11/13 stages = ~85%.
+**Progress:** 12/13 stages = ~92%.
 
 ---
 
-## Current State (as of 2026-04-23, end of session)
+## Current State (as of 2026-04-24, end of session)
 
 **Git:**
-- Feature branch: `feature/stakeout-qc` at `a73039e` (revert of commit 2c). Functionally equivalent to `c35c00c` (Stage 8.5b-polish 2b).
-- All progress pushed to origin. No WIP branches in flight beyond `feature/stakeout-qc-85b-polish-wip` (broken reference only).
+- Feature branch: `feature/stakeout-qc` at `5418c8f` (Stage 8.5b-polish 4b: cap label halo at deep zoom). Stage 8.5b-polish fully shipped.
+- All progress pushed to origin.
+- WIP branch `feature/stakeout-qc-85b-polish-wip` remains on origin as reference only — no longer needed.
 - Working tree: clean
 
 **Environment:**
 - Vite: `http://localhost:5174` (port 5173 in use)
 - Claude Code CLI: active
+- Primary test browser: Safari (Chrome also works; see Safari-specific bug in Known Bugs)
 
 **Test dataset:** unchanged — 513-point "8.5A_TESTING" project.
 
-**Next action (tomorrow):** Resume Stage 8.5b-polish. Do NOT re-attempt commit 2c's approach (wrapper padding inside DesignPointsPlanView). Layout breathing room, if addressed, lives at the consumer-page level, not the shared component. Proceed to commit 3 (Find-point popover) first; then commit 4 (label collision + zoom-responsive point sizing). Re-evaluate layout + grid styling after commit 4 ships.
-
----
-
-## Stage 8.5b-polish Scope (What We're Rebuilding)
-
-Five features, four deliverable components:
-
-1. **Label collision avoidance** — first-render-wins, lowest `point_id` wins collision, AABB overlap test
-2. **Zoom-responsive point sizing** — log-based soft scale, max 2x boost at deep zoom
-3. **Feature-code filter chips** — 13 groups + "All" (Control / Water / Storm / Sanitary / Gas / Electric / Telecom / Lighting / Curb / Grading / Trees / Structures / Unknown); click isolates, shift-click toggles, hide-not-dim
-4. **Feature legend** — toggleable panel, prominent color-swatch button ("[🟢🟡🔵⚪] Legend"), shape indicators match canvas
-5. **Zoom-to-point popover** — autocomplete (point ID or feature code), preset distances (5/15/50/100ft + custom), 300ms animated zoom, highlight ring
-
-**Known failure mode from original WIP attempt (2026-04-22):** Claude Code restructured the canvas into `outerWrapperRef` (flex column) + inner `containerRef` (wheel listener). That restructure broke: layout overflow, wheel zoom, pan, double-click reset, pinch zoom, Find Point button stuck state. **Do not repeat this architectural choice.** Toolbar must be a sibling above the canvas container, not a parent wrapping it.
-
-**Second failure mode (2026-04-23, commit 2c):** Adding horizontal padding to DesignPointsPlanView's outer flex wrapper to create "breathing room" against viewport edges. This cascaded badly to the AssignmentDetail QC view, where the absolutely-positioned "Seed test QC data" dev button began overlapping the Legend button. Reverted. **Do not add layout padding inside shared components.**
-
-**Commit strategy for rebuild:** incremental — toolbar + chips first (commit 1 ✅), legend (commit 2 ✅), UX fixes (commit 2b ✅), zoom-to-point popover (commit 3), render-loop polish (commit 4).
+**Next action:** Stage 9 — crew field view UI (mobile-first) + push notifications (iOS 16.4+ caveat). This is the first mobile-facing work in the project; expect to spend early session time on the PWA shell and route structure before touching the QC-specific screens.
 
 ---
 
@@ -157,7 +141,7 @@ Five features, four deliverable components:
 
 **Status precedence in rendering:** SELECTED (amber) > STATUS (in_tol/out_of_tol/etc) > FEATURE_CODE > default teal.
 
-**Product decision deferred:** In AssignmentDetail's QC view, `pointStatusMap` causes every pending point to render teal, fully suppressing feature-code colors. Options for later: dual-channel (fill=status, border=feature_code), explicit toggle, or leave as-is (status is the primary signal in QC view). Not a bug — product decision to revisit after commit 4.
+**Product decision deferred:** In AssignmentDetail's QC view, `pointStatusMap` causes every pending point to render teal, fully suppressing feature-code colors. Options for later: dual-channel (fill=status, border=feature_code), explicit toggle, or leave as-is (status is the primary signal in QC view). Tracked in Phase 2 Feature Requests.
 
 ---
 
@@ -173,6 +157,8 @@ Five features, four deliverable components:
 - **Labels at high zoom:** auto-appear when avg point spacing > 40px; lowest `point_id` wins collision
 - **Toolbar chip overflow:** hide 0-count chips by default, inline `+N` / `−` toggle chip expands/collapses; `flex-wrap: wrap` handles dense datasets instead of horizontal scroll (shipped commit 2b)
 - **Layout concerns (padding, margins, breathing room):** live at consumer-page level only. Never add to shared components.
+- **Find-point parent toggle pattern:** always re-capture `anchorRect` from `e.currentTarget.getBoundingClientRect()` on click and always set visibility true. Separate close path (Escape, outside-click, Cancel, successful zoom) handles hide. Avoids stuck-after-first-click bug class.
+- **Zoom-responsive point sizing formula:** `boost = 1 + log2(zoomRatio) * 0.35`, clamped to `[1, 2]`. Floor at 1x prevents shrinking when zoomed out past default.
 
 ---
 
@@ -188,10 +174,13 @@ Current PM-facing build targets scheduler/dispatch persona. Licensed PMs who own
 
 - **[BUG]** Stage 7b.1 edit-points removes `stakeout_assignment_points` but CASCADE doesn't reach `stakeout_qc_points`. Manifested in 7b.2 testing, fixed manually. Stage 13 SQL fix needed.
 - **[BUG]** Stage 7a seeder may create observations for design points not in `assignment_points`. Data integrity issue.
-- **[TECH DEBT]** `AssignmentDetail.jsx` at 1549 lines. `DesignPointsPlanView.jsx` at 1378 lines post-commit 2b. Stage 13 refactor candidates: extract `PointList` (~300 lines), `ResendConfirmModal` (~100 lines), `PointGlyph` (~90 lines), `Tooltip` (~250 lines).
+- **[TECH DEBT]** `AssignmentDetail.jsx` at 1549 lines. `DesignPointsPlanView.jsx` at ~1500 lines post-Stage-8.5b-polish. Stage 13 refactor candidates: extract `PointList` (~300 lines), `ResendConfirmModal` (~100 lines), `PointGlyph` (~90 lines), `Tooltip` (~250 lines).
 - **[DEFERRED]** Stacked points UX: control point + daily check shots stack at same location, no way to view/click each. Needs data model decision (check shot = observation vs separate table) before visualization.
 - **[DEFERRED]** "Controls off-view" indicator when user zooms away from control points.
-- **[DEFERRED VISUAL]** Grid styling uniform strokeOpacity 0.4 at every zoom reads as noisy. Consider tiered grid (stronger major lines at round intervals, faint minor lines between) after commit 4 ships — the zoom-responsive point sizing + label dedup may already resolve the perception.
+- **[DEFERRED VISUAL]** Grid styling uniform strokeOpacity 0.4 at every zoom reads as noisy. Consider tiered grid (stronger major lines at round intervals, faint minor lines between). Re-evaluate during Stage 13; the zoom-responsive point sizing + label dedup from commit 4 already resolved most of the perceived clutter.
+- **[DEFERRED VISUAL]** Labels invisible at extreme zoom (1–2ft viewBox) in Safari. WebKit refuses to render SVG text when computed `font-size` drops below ~0.05px. Chrome renders fine. Best fix: HTML overlay labels positioned over SVG via screen-space math, rather than SVG `<text>` with sub-pixel sizes.
+- **[DEFERRED UX]** Control points non-selectable. Intentional Stage 8.5a decision that blocks adding them to assignments. Needs UX design: toolbar mode selector, Alt-key modifier, or sidebar "include controls" checkbox.
+- **[DEFERRED FEATURE]** "Export controls to CSV" button. Iterate classified controls, format N/E/Z, trigger download. Belongs on AssignmentBuilder page or a project-tools panel.
 
 ---
 
@@ -220,6 +209,10 @@ Current PM-facing build targets scheduler/dispatch persona. Licensed PMs who own
 - **React 18 StrictMode mounts twice in dev.** Cleanup handlers matter.
 - **Zero-consumer-change integration pattern:** lift ZERO state to parents when extending shared components. All integration through component's internal state. Proven across AssignmentBuilder, AssignmentDetail, AssignmentPointsEditor.
 - **Layout concerns don't belong inside shared components.** Padding, margins, and horizontal breathing room cascade unpredictably to every consumer. The "Seed test QC data" dev button in AssignmentDetail is absolutely positioned and depends on the shared canvas NOT restructuring its own layout. Solve layout at the page level (AssignmentBuilder page, AssignmentDetail page, AssignmentPointsEditor page), never inside DesignPointsPlanView.
+- **Find-point parent toggle pattern:** for a portaled popover anchored to a toolbar button, ALWAYS re-capture `e.currentTarget.getBoundingClientRect()` on click and ALWAYS set visibility true (don't toggle-via-`!prev`). A separate close path (Escape / outside-click / Cancel button / successful zoom) handles hide. This avoids the stuck-after-first-click bug class where a cached anchor rect or a toggle race leaves the popover in an inconsistent state.
+- **Log-scale zoom-responsive sizing:** `boost = 1 + log2(zoomRatio) * 0.35`, clamped `[1, 2]`. At 2x zoom → 1.35x, at 4x → 1.7x, at 8x+ → capped 2x. Floor at 1x prevents shrinking below default when zoomed out. Feels proportional without exploding.
+- **Label AABB collision, first-render-wins:** sort points by `point_id` ascending (numeric when possible, else string), iterate and place labels; for each candidate compute a rectangle `[x, y, x+labelW, y+labelH]` in SVG units, compare against already-placed rectangles, skip if any overlap. Suppresses text but keeps points visible. Deterministic (lowest point_id wins every time).
+- **SVG text at deep zoom is a Safari trap.** When `font-size` in SVG units corresponds to less than ~0.05 screen pixels, Safari/WebKit stops rendering the glyphs entirely while reporting them present in the DOM. Chrome renders fine. Robust solution: HTML overlay positioned via screen-space math; fragile solution: floor font-size at a minimum SVG-unit value (trades invisible for gigantic).
 
 ---
 
@@ -252,6 +245,39 @@ Current PM-facing build targets scheduler/dispatch persona. Licensed PMs who own
 
 ## Session Log
 
+### 2026-04-24 — Stage 8.5b-polish complete
+
+**Shipped (rebuild of Stage 8.5b-polish on clean branch, commits 1–4b):**
+- Commit 1 (`2cd1396`): feature-group filter chips + canvas toolbar scaffold
+- Commit 2 (`51008e9`): feature legend panel + Legend toggle
+- Commit 2b (`c35c00c`): legend scroll fix (`data-canvas-scroll-region` + `closest()` bypass) + toolbar chip overflow polish (hide 0-count chips, inline `+N` / `−` expand toggle, `flex-wrap`)
+- Commit 2c (`7391bf4`) reverted by `a73039e` on 2026-04-23: attempted wrapper padding inside shared component; broke AssignmentDetail QC view layout
+- Commit 3 (`c234501`): Find-point popover (portaled autocomplete, 300ms animated viewBox tween, fade-out highlight ring)
+- Commit 3b (`868101e`): popover right-edge anchor when button sits in right half of viewport (fixes off-screen clip) + more prominent ring (3000ms, thicker stroke, glow pulse)
+- Commit 4 (`6305966`): label collision avoidance (first-render-wins AABB overlap, lowest `point_id` wins) + zoom-responsive point sizing (log-scale boost up to 2x at deep zoom, floored at 1x)
+- Commit 4b (`5418c8f`): cap label halo (removed `Math.max(2 * svgPerPx, 0.3)` floor that became dominant at deep zoom; replaced with clean `1.5 * svgPerPx`)
+
+All eight commits pushed to origin as of `5418c8f`.
+
+**Decided this session:**
+- Layout concerns belong at consumer-page level only — non-negotiable architectural constraint (learned from commit 2c revert).
+- Toolbar chip overflow UX locked: hide 0-count + inline `+N` / `−` toggle + `flex-wrap`.
+- Legend wheel-scroll pattern locked: `data-canvas-scroll-region` on outermost panel div + `closest()` bypass in canvas wheel handler.
+- Find-point parent toggle pattern: capture `anchorRect` from `e.currentTarget.getBoundingClientRect()` on every click and set visibility true unconditionally. This avoids the "stuck after first click" bug the original WIP had in its parent logic.
+- Point-sizing soft zoom-scale formula: `1 + log2(zoomRatio) * 0.35`, clamped `[1, 2]`. Tested empirically; feels proportional at every zoom without exploding.
+- Label collision: first-render-wins with sorted lowest-point_id-first, AABB overlap in SVG units.
+
+**Deferred:**
+- **Stage 13 item:** SVG labels invisible at extreme zoom (1–2ft viewBox) in Safari. `fontSize` computes to ~0.02px, WebKit refuses sub-pixel text rendering (Chrome more forgiving). Vote for Stage 13 fix: HTML overlay labels positioned over SVG via screen-space math. Affects only extreme zoom; every working zoom level looks clean.
+- **Stage 13 item:** Control points non-selectable (Stage 8.5a decision) blocks adding them to assignments. Needs UX design: toolbar mode toggle, Alt-modifier key, or sidebar "include controls" checkbox. Est. 30–60 min.
+- **Stage 13 item:** Export controls to CSV button. Iterate classified controls, format N/E/Z, trigger download. Belongs in AssignmentBuilder page or project tools, not inside DesignPointsPlanView. Est. 15 min.
+- **Deferred visual polish:** grid styling tiered-line evaluation (tracked in memory; post-commit-4 perception test inconclusive). Re-evaluate during Stage 13 polish.
+- **Deferred product decision:** AssignmentDetail QC view suppresses feature-code colors because `pointStatusMap` → status color precedence wins. Consider dual-channel (fill=status, border=feature) or explicit toggle. Tracked in Phase 2 Feature Requests.
+
+**Open for next session:** Stage 9 — crew field view UI (mobile-first), plus push notifications with iOS 16.4+ caveat.
+
+---
+
 ### 2026-04-23 — Stage 8.5b-polish commits 1, 2, 2b, 2c (reverted)
 
 **Shipped:**
@@ -261,13 +287,6 @@ Current PM-facing build targets scheduler/dispatch persona. Licensed PMs who own
 
 **Reverted:**
 - Commit 2c (`7391bf4` → reverted by `a73039e`): attempted canvas/toolbar horizontal breathing room via wrapper padding on DesignPointsPlanView's outer flex container. Revert triggered by visual testing in AssignmentDetail QC view, where the wrapper padding caused the dev-only "Seed test QC data" button to overlap the Legend button. Lesson banked: padding inside a shared component cascades to every consumer; layout breathing room belongs at the consumer-page level.
-
-**Open for next session:**
-- **Commit 3: Find-point popover** (autocomplete by `point_id` or feature_code, preset zoom distances 5/15/50/100 + custom, 300ms animated zoom, fade-out highlight ring). Reference implementation in `/tmp/wip_popover.jsx` from the WIP branch (portaled, state-pure). Parent must implement a clean toggle pattern — the "stuck after first click" bug in the original WIP lived in the parent, not the popover.
-- **Commit 4: render-loop polish** — label collision avoidance (AABB overlap, lowest `point_id` wins) and zoom-responsive point sizing (log-scale boost up to 2x at deep zoom). Expected to resolve two visual complaints: tiny-dots-at-5ft-scale and label-soup-at-50ft-scale.
-- **Deferred product decision:** AssignmentDetail QC view feature-code color visibility (tracked in Phase 2 Feature Requests).
-- **Deferred visual polish:** grid styling (tracked in Known Bugs → Deferred Visual).
-- **Layout breathing room:** re-think at parent-page level when it comes up. Sidebar-eats-space is part of the cramped feeling; a sidebar collapse toggle or responsive breakpoint may be the right answer rather than component padding.
 
 **Decided this session:**
 - Layout concerns belong at consumer-page level only — added to Architectural Constraints as non-negotiable.
