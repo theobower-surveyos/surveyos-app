@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { Locate } from 'lucide-react';
 import { FEATURE_GROUPS, classifyPointToGroup } from './featureCodeGroups.js';
 
 // ─── CanvasToolbar ────────────────────────────────────────────────────
@@ -22,6 +23,8 @@ export default function CanvasToolbar({
     onFilterChange,
     legendVisible,
     onLegendToggle,
+    findPointActive,
+    onFindPointClick,
 }) {
     // Stage 8.5b-polish commit 2b — empty chips are hidden by default
     // and revealed via an inline +N / − toggle chip so the toolbar can
@@ -253,6 +256,15 @@ export default function CanvasToolbar({
             </div>
 
             <div className="ct-actions">
+                <button
+                    type="button"
+                    className={`ct-btn ${findPointActive ? 'active' : ''}`}
+                    onClick={(e) => onFindPointClick(e.currentTarget.getBoundingClientRect())}
+                    title="Zoom to a specific point"
+                >
+                    <Locate size={14} />
+                    <span>Find point</span>
+                </button>
                 <button
                     type="button"
                     className={`ct-btn ${legendVisible ? 'active' : ''}`}

@@ -4,6 +4,7 @@ import { resolveFeatureStyle } from './planview/featureCodeStyles.js';
 import { classifyPointToGroup } from './planview/featureCodeGroups.js';
 import CanvasToolbar from './planview/CanvasToolbar.jsx';
 import FeatureLegend from './planview/FeatureLegend.jsx';
+import ZoomToPointPopover from './planview/ZoomToPointPopover.jsx';
 
 // ─── DesignPointsPlanView ───────────────────────────────────────────────
 // SVG canvas showing every design point in survey coordinate space.
@@ -160,6 +161,7 @@ export default function DesignPointsPlanView({
     const wheelRafRef = useRef(null);
     const wheelPendingRef = useRef(null);
     const viewBoxRef = useRef(null); // mirror of viewBoxState for non-React listeners
+    const zoomAnimRef = useRef(null); // rAF handle for find-point zoom animation
     // Refs the wheel handler reads from — the wheel listener is attached
     // ONCE on mount with empty deps so it survives across defaultViewBox
     // changes, which means it cannot close over defaultViewBox directly.
@@ -176,6 +178,10 @@ export default function DesignPointsPlanView({
     const [filterState, setFilterState] = useState(null);
     // Stage 8.5b-polish commit 2 — floating feature-legend panel.
     const [legendVisible, setLegendVisible] = useState(false);
+    // Stage 8.5b-polish commit 3 — find-point popover + highlight ring.
+    const [findPointVisible, setFindPointVisible] = useState(false);
+    const [findPointAnchor, setFindPointAnchor] = useState(null); // DOMRect | null
+    const [highlightId, setHighlightId] = useState(null);
 
     // ── Classification and default bounds ────────────────────────
     const classification = useMemo(() => classifyPoints(designPoints), [designPoints]);
@@ -623,6 +629,68 @@ export default function DesignPointsPlanView({
         setLasso(null);
     }
 
+    // ── Find-point animated zoom (Stage 8.5b-polish commit 3) ────
+    // Animates the viewBox from its current frame to a square window
+    // centered on the target point (size = distanceFt * 2), over 300ms
+    // with ease-out-cubic. On completion, sets highlightId to trigger
+    // the amber ring keyframe animation (1500ms). A rapid second call
+    // cancels any in-flight frame so the second zoom wins cleanly.
+    function handleZoomToPoint(point, distanceFt) {
+        if (typeof point.northing !== 'number' || typeof point.easting !== 'number') return;
+        if (!viewBoxRef.current) return;
+
+        if (zoomAnimRef.current != null) {
+            cancelAnimationFrame(zoomAnimRef.current);
+            zoomAnimRef.current = null;
+        }
+
+        const targetW = distanceFt * 2;
+        const targetH = distanceFt * 2;
+        const targetX = point.easting - distanceFt;
+        const targetY = -point.northing - distanceFt;
+
+        const start = { ...viewBoxRef.current };
+        const end = { x: targetX, y: targetY, w: targetW, h: targetH };
+        const startTime = performance.now();
+        const duration = 300;
+
+        function easeOutCubic(t) {
+            return 1 - Math.pow(1 - t, 3);
+        }
+
+        function step(now) {
+            const elapsed = now - startTime;
+            const t = Math.min(1, elapsed / duration);
+            const k = easeOutCubic(t);
+            const next = {
+                x: start.x + (end.x - start.x) * k,
+                y: start.y + (end.y - start.y) * k,
+                w: start.w + (end.w - start.w) * k,
+                h: start.h + (end.h - start.h) * k,
+            };
+            viewBoxRef.current = next;
+            setViewBoxState(next);
+            if (t < 1) {
+                zoomAnimRef.current = requestAnimationFrame(step);
+            } else {
+                zoomAnimRef.current = null;
+                setHighlightId(point.id);
+                setTimeout(() => setHighlightId(null), 1500);
+            }
+        }
+
+        zoomAnimRef.current = requestAnimationFrame(step);
+    }
+
+    // Cancel any in-flight zoom animation on unmount.
+    useEffect(() => {
+        return () => {
+            if (zoomAnimRef.current != null) {
+                cancelAnimationFrame(zoomAnimRef.current);
+            }
+        };
+    }, []);
+
     // ── Empty state ──────────────────────────────────────────────
     // Rendered INSIDE the always-mounted wrapper div so containerRef
     // populates on first mount — the once-attached wheel listener
@@ -753,6 +821,11 @@ export default function DesignPointsPlanView({
                 onFilterChange={setFilterState}
                 legendVisible={legendVisible}
                 onLegendToggle={() => setLegendVisible((v) => !v)}
+                findPointActive={findPointVisible}
+                onFindPointClick={(rect) => {
+                    setFindPointAnchor(rect);
+                    setFindPointVisible(true);
+                }}
             />
             <div
                 ref={containerRef}
@@ -773,6 +846,13 @@ export default function DesignPointsPlanView({
                     overscrollBehavior: 'contain',
                 }}
             >
+            <style>{`
+                @keyframes findPointRing {
+                    0%   { opacity: 1; transform: scale(0.6); }
+                    30%  { opacity: 1; transform: scale(1); }
+                    100% { opacity: 0; transform: scale(1.4); }
+                }
+            `}</style>
             <svg
                 ref={svgRef}
                 viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`}
@@ -982,6 +1062,32 @@ export default function DesignPointsPlanView({
                     </g>
                 )}
 
+                {/* Find-point highlight ring (Stage 8.5b-polish commit 3).
+                    Rendered after labels so it draws on top. Scales about its
+                    own center via transform-box: fill-box. */}
+                {highlightId && (() => {
+                    const p = designPoints.find((pt) => pt.id === highlightId);
+                    if (!p || typeof p.northing !== 'number' || typeof p.easting !== 'number') return null;
+                    const ringR = Math.max(baseRadius * 3, currentMaxDim * 0.015);
+                    return (
+                        <circle
+                            cx={p.easting}
+                            cy={-p.northing}
+                            r={ringR}
+                            fill="none"
+                            stroke="var(--brand-amber)"
+                            strokeWidth={Math.max(2 * svgPerPx, 0.4)}
+                            vectorEffect="non-scaling-stroke"
+                            style={{
+                                animation: 'findPointRing 1500ms ease-out forwards',
+                                transformBox: 'fill-box',
+                                transformOrigin: 'center',
+                                pointerEvents: 'none',
+                            }}
+                        />
+                    );
+                })()}
+
                 {/* North arrow (top-right of current viewBox) */}
                 <g transform={`translate(${arrowCx}, ${arrowCy})`}>
                     <path
@@ -1051,6 +1157,16 @@ export default function DesignPointsPlanView({
                 visible={legendVisible}
                 onClose={() => setLegendVisible(false)}
                 filterState={filterState}
+            />
+
+            {/* Find-point popover (portaled to document.body; React tree
+                placement here is incidental). */}
+            <ZoomToPointPopover
+                visible={findPointVisible}
+                anchorRect={findPointAnchor}
+                points={designPoints}
+                onClose={() => setFindPointVisible(false)}
+                onZoom={(point, distanceFt) => handleZoomToPoint(point, distanceFt)}
             />
 
             {/* Pan-mode badge */}
