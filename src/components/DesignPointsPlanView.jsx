@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { classifyPoints } from './planview/pointClassification.js';
 import { resolveFeatureStyle } from './planview/featureCodeStyles.js';
+import { classifyPointToGroup } from './planview/featureCodeGroups.js';
+import CanvasToolbar from './planview/CanvasToolbar.jsx';
 
 // ─── DesignPointsPlanView ───────────────────────────────────────────────
 // SVG canvas showing every design point in survey coordinate space.
@@ -168,6 +170,9 @@ export default function DesignPointsPlanView({
     const [isSpaceDown, setIsSpaceDown] = useState(false);
     const [isPanning, setIsPanning] = useState(false);
     const [viewBoxState, setViewBoxState] = useState(null);
+    // Stage 8.5b-polish commit 1 — feature-group filter chips. null = all
+    // groups active; Set<groupId> = only those listed are rendered.
+    const [filterState, setFilterState] = useState(null);
 
     // ── Classification and default bounds ────────────────────────
     const classification = useMemo(() => classifyPoints(designPoints), [designPoints]);
@@ -181,6 +186,16 @@ export default function DesignPointsPlanView({
             else staking.push(p);
         }
         return { stakingPoints: staking, controlPoints: control };
+    }, [designPoints, classification]);
+
+    // Per-point group id cached once so the render paths can do O(1)
+    // filter lookups instead of re-classifying each frame.
+    const pointGroups = useMemo(() => {
+        const m = new Map();
+        for (const p of (designPoints || [])) {
+            m.set(p.id, classifyPointToGroup(p, classification));
+        }
+        return m;
     }, [designPoints, classification]);
 
     const defaultViewBox = useMemo(() => {
@@ -632,6 +647,14 @@ export default function DesignPointsPlanView({
     }
 
     // ── Derived rendering values ─────────────────────────────────
+    // Filter helper — returns true if a group id is currently visible.
+    // Placed after the empty-state short-circuit so it's only referenced
+    // from the main render path.
+    function isGroupVisible(groupId) {
+        if (!filterState) return true;
+        return filterState.has(groupId);
+    }
+
     const vb = viewBoxState;
     const currentMaxDim = Math.max(vb.w, vb.h);
 
@@ -702,23 +725,38 @@ export default function DesignPointsPlanView({
 
     return (
         <div
-            ref={containerRef}
             style={{
-                position: 'relative',
+                display: 'flex',
+                flexDirection: 'column',
                 width: '100%',
                 height: '100%',
-                userSelect: 'none',
-                WebkitUserSelect: 'none',
-                MozUserSelect: 'none',
-                msUserSelect: 'none',
-                touchAction: 'none',
-                // Stop wheel events from chaining to a scrollable ancestor
-                // (app-main-content has overflow: auto). Combined with the
-                // container-scoped wheel listener, this guarantees the
-                // canvas always sees its own scroll gestures.
-                overscrollBehavior: 'contain',
             }}
         >
+            <CanvasToolbar
+                points={designPoints}
+                classification={classification}
+                filterState={filterState}
+                onFilterChange={setFilterState}
+            />
+            <div
+                ref={containerRef}
+                style={{
+                    // position:relative and overscrollBehavior:contain are
+                    // load-bearing — the wheel listener, tooltip anchor,
+                    // and absolute-positioned PAN badge all rely on them.
+                    // minHeight:0 lets the flex-child shrink below its
+                    // content size in constrained containers.
+                    position: 'relative',
+                    flex: '1 1 auto',
+                    minHeight: 0,
+                    userSelect: 'none',
+                    WebkitUserSelect: 'none',
+                    MozUserSelect: 'none',
+                    msUserSelect: 'none',
+                    touchAction: 'none',
+                    overscrollBehavior: 'contain',
+                }}
+            >
             <svg
                 ref={svgRef}
                 viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`}
@@ -793,6 +831,7 @@ export default function DesignPointsPlanView({
                 {showControlPoints &&
                     controlPoints.map((p) => {
                         if (typeof p.northing !== 'number' || typeof p.easting !== 'number') return null;
+                        if (!isGroupVisible('control')) return null;
                         const isHovered = hoveredId === p.id;
                         const r = controlSize;
                         const cx = p.easting;
@@ -828,6 +867,7 @@ export default function DesignPointsPlanView({
                 <g>
                     {stakingPoints.map((p) => {
                         if (typeof p.northing !== 'number' || typeof p.easting !== 'number') return null;
+                        if (!isGroupVisible(pointGroups.get(p.id))) return null;
                         const isSelected = selectedIds && selectedIds.has(p.id);
                         const isHovered = hoveredId === p.id;
                         const statusKey = pointStatusMap ? pointStatusMap.get(p.id) : null;
@@ -887,6 +927,7 @@ export default function DesignPointsPlanView({
                 {showLabels && (
                     <g style={{ pointerEvents: 'none' }}>
                         {pointsInView.map((p) => {
+                            if (!isGroupVisible(pointGroups.get(p.id))) return null;
                             const cx = p.easting + labelOffsetX;
                             const cy = -p.northing;
                             return (
@@ -1003,6 +1044,7 @@ export default function DesignPointsPlanView({
                     isControl={hoveredIsControl}
                 />
             )}
+            </div>
         </div>
     );
 }
