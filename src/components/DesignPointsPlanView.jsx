@@ -802,9 +802,17 @@ export default function DesignPointsPlanView({
     const visibleCount = Math.max(1, pointsInView.length);
     const screenSpacingPx = svgWidthPx / Math.sqrt(visibleCount);
     const showLabels = screenSpacingPx > 40;
-    const labelSize = 10 * svgPerPx;
-    const labelSizeSmall = 9 * svgPerPx;
-    const labelHalo = Math.max(2 * svgPerPx, 0.3);
+    // Label sizing (Stage 8.5b-polish commit 4b). Primary label ~12px
+    // screen, feature code ~10px screen, halo ~1.5px screen. Pixel-
+    // targeting via svgPerPx keeps text size constant across zoom levels
+    // instead of ballooning. Removed the `Math.max(..., 0.3)` halo floor
+    // that shipped in commit 4 — a 0.3 SVG-unit floor is 0.3 feet, which
+    // at 1ft viewBox covers 30% of the canvas and paints a dark smear
+    // over the point glyph. 1.5 * svgPerPx is always 1.5 screen pixels
+    // regardless of zoom.
+    const labelSize = 12 * svgPerPx;
+    const labelSizeSmall = 10 * svgPerPx;
+    const labelHalo = 1.5 * svgPerPx;
     const labelOffsetX = baseRadius * 1.6;
 
     // Label collision avoidance (Stage 8.5b-polish commit 4):
