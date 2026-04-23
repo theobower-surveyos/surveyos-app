@@ -1,15 +1,31 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { classifyPoints } from './planview/pointClassification.js';
 
 // ─── DesignPointsPlanView ───────────────────────────────────────────────
 // SVG canvas showing every design point in survey coordinate space.
-// Supports click-to-toggle, shift-click, and drag-to-lasso selection.
+// Supports click-to-toggle, shift-click, and drag-to-lasso selection,
+// plus Stage 8.5a additions: control-point detection + distinct glyph,
+// fit-to-staking default zoom, wheel zoom, spacebar + drag pan, and
+// two-finger pinch/pan on touch devices.
+//
 // Survey northing grows up; SVG y grows down — we flip y in the render
 // transform (svg_y = -northing) so the plan reads "north is up".
 //
-// No zoom, no pan. Stage 6 scope.
+// Pan/zoom state is deliberately internal to the component — each mount
+// gets a fresh default view. Lifting would leak an ephemeral interaction
+// concern into three consumer components that don't care.
+
+// ── Constants ──────────────────────────────────────────────────────────
 
 const DRAG_THRESHOLD_PX = 3;
-const GRID_STEP_FT = 50;
+
+// Zoom limits, expressed as multipliers against the default "fit to
+// staking" viewBox. Larger multiplier = zoomed-in (smaller viewBox).
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 20;
+const WHEEL_ZOOM_STEP = 1.1;
+
+const STAKING_PAD_FRAC = 0.05; // 5% padding around the staking cluster
 
 // Status-driven point styling used by AssignmentDetail. When
 // pointStatusMap is passed, this overrides the default teal color —
@@ -38,6 +54,48 @@ const STATUS_COLORS = {
     pending: 'var(--text-muted)',
 };
 
+// Tooltip sizing hints for boundary-flip math. The real div can be taller
+// when extraPointData is present, so we measure after the first layout
+// and re-use the real size for subsequent positioning.
+const TOOLTIP_BASE_W = 220;
+const TOOLTIP_BASE_H = 130;
+const TOOLTIP_EXTRA_H = 230;
+const TOOLTIP_EDGE_GAP = 14;
+
+// ── Geometry helpers ───────────────────────────────────────────────────
+
+function computePointsBounds(points, padFrac = 0.1) {
+    if (!points || points.length === 0) return null;
+    let minN = Infinity;
+    let maxN = -Infinity;
+    let minE = Infinity;
+    let maxE = -Infinity;
+    for (const p of points) {
+        if (typeof p.northing !== 'number' || typeof p.easting !== 'number') continue;
+        if (p.northing < minN) minN = p.northing;
+        if (p.northing > maxN) maxN = p.northing;
+        if (p.easting < minE) minE = p.easting;
+        if (p.easting > maxE) maxE = p.easting;
+    }
+    if (!Number.isFinite(minN)) return null;
+    const w = Math.max(maxE - minE, 1);
+    const h = Math.max(maxN - minN, 1);
+    const pad = padFrac * Math.max(w, h, 50);
+    return {
+        minN,
+        maxN,
+        minE,
+        maxE,
+        w,
+        h,
+        pad,
+        vbX: minE - pad,
+        vbY: -(maxN + pad),
+        vbW: w + 2 * pad,
+        vbH: h + 2 * pad,
+    };
+}
+
 function toSvgCoords(svgEl, clientX, clientY) {
     if (!svgEl || !svgEl.getScreenCTM) return null;
     const ctm = svgEl.getScreenCTM();
@@ -48,6 +106,33 @@ function toSvgCoords(svgEl, clientX, clientY) {
     return pt.matrixTransform(ctm.inverse());
 }
 
+// Dynamic grid spacing: aim for ~18 visible lines in whichever dimension
+// drives the viewport. Keeps the grid readable across zoom levels.
+const NICE_STEPS = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000];
+function pickGridStep(visibleExtentFt) {
+    const target = 18;
+    const raw = visibleExtentFt / target;
+    for (const c of NICE_STEPS) if (c >= raw) return c;
+    return NICE_STEPS[NICE_STEPS.length - 1];
+}
+
+// Nice survey length to render in the scale bar. Targets ~110 px of
+// screen length; picks the nearest NICE_STEPS value.
+function pickScaleBar(viewBoxW, containerPx, targetPx = 110) {
+    const pxPerFoot = containerPx / viewBoxW || 1;
+    const rawFeet = targetPx / pxPerFoot;
+    let feet = NICE_STEPS[0];
+    for (const c of NICE_STEPS) {
+        if (Math.abs(Math.log10(c) - Math.log10(rawFeet)) <
+            Math.abs(Math.log10(feet) - Math.log10(rawFeet))) {
+            feet = c;
+        }
+    }
+    return { feet, pxLength: feet * pxPerFoot };
+}
+
+// ── Component ──────────────────────────────────────────────────────────
+
 export default function DesignPointsPlanView({
     designPoints,
     selectedIds,
@@ -56,49 +141,149 @@ export default function DesignPointsPlanView({
     onHoverChange,
     pointStatusMap,
     extraPointData,
+    // Stage 8.5a opt-ins — consumers don't have to pass these.
+    initialZoomTo = 'staking',
+    allowPanZoom = true,
+    showControlPoints = true,
 }) {
     const svgRef = useRef(null);
     const containerRef = useRef(null);
+    const tooltipRef = useRef(null);
+    const tooltipMeasuredRef = useRef(null); // { w, h }
+    const activePointersRef = useRef(new Map()); // pointerId → {clientX, clientY}
+    const pinchStartRef = useRef(null); // { centroid, dist, viewBox }
+    const panStartRef = useRef(null); // { clientX, clientY, viewBox }
+    const wheelRafRef = useRef(null);
+    const wheelPendingRef = useRef(null);
+    const viewBoxRef = useRef(null); // mirror of viewBoxState for non-React listeners
+    // Refs the wheel handler reads from — the wheel listener is attached
+    // ONCE on mount with empty deps so it survives across defaultViewBox
+    // changes, which means it cannot close over defaultViewBox directly.
+    const defaultViewBoxRef = useRef(null);
+    const allowPanZoomRef = useRef(allowPanZoom);
+
     const [lasso, setLasso] = useState(null);
     const [cursor, setCursor] = useState(null);
+    const [isSpaceDown, setIsSpaceDown] = useState(false);
+    const [isPanning, setIsPanning] = useState(false);
+    const [viewBoxState, setViewBoxState] = useState(null);
 
-    const bounds = useMemo(() => computeBounds(designPoints), [designPoints]);
+    // ── Classification and default bounds ────────────────────────
+    const classification = useMemo(() => classifyPoints(designPoints), [designPoints]);
 
-    const gridLines = useMemo(() => {
-        if (!bounds) return [];
-        const lines = [];
-        const startE = Math.floor(bounds.minE / GRID_STEP_FT) * GRID_STEP_FT;
-        const endE = Math.ceil(bounds.maxE / GRID_STEP_FT) * GRID_STEP_FT;
-        const startN = Math.floor(bounds.minN / GRID_STEP_FT) * GRID_STEP_FT;
-        const endN = Math.ceil(bounds.maxN / GRID_STEP_FT) * GRID_STEP_FT;
-        for (let e = startE; e <= endE; e += GRID_STEP_FT) {
-            lines.push({ type: 'v', c: e });
+    const { stakingPoints, controlPoints } = useMemo(() => {
+        const staking = [];
+        const control = [];
+        for (const p of (designPoints || [])) {
+            const cls = classification.get(p.id);
+            if (cls === 'control') control.push(p);
+            else staking.push(p);
         }
-        for (let n = startN; n <= endN; n += GRID_STEP_FT) {
-            lines.push({ type: 'h', c: n });
-        }
-        return lines;
-    }, [bounds]);
+        return { stakingPoints: staking, controlPoints: control };
+    }, [designPoints, classification]);
 
-    // Clear selection on Escape.
+    const defaultViewBox = useMemo(() => {
+        // Spec: fit to staking cluster if present, else fall back to full.
+        const fitSet =
+            initialZoomTo === 'all'
+                ? designPoints
+                : stakingPoints.length > 0
+                    ? stakingPoints
+                    : designPoints;
+        return computePointsBounds(fitSet, STAKING_PAD_FRAC);
+    }, [designPoints, stakingPoints, initialZoomTo]);
+
+    // Reset viewBox when the default shifts (e.g., project load, big edit).
     useEffect(() => {
-        function onKey(e) {
+        if (!defaultViewBox) {
+            setViewBoxState(null);
+            viewBoxRef.current = null;
+            return;
+        }
+        const next = {
+            x: defaultViewBox.vbX,
+            y: defaultViewBox.vbY,
+            w: defaultViewBox.vbW,
+            h: defaultViewBox.vbH,
+        };
+        setViewBoxState(next);
+        viewBoxRef.current = next;
+    }, [defaultViewBox]);
+
+    // Keep the ref in lockstep so wheel / pointer listeners read fresh.
+    useEffect(() => {
+        viewBoxRef.current = viewBoxState;
+    }, [viewBoxState]);
+
+    // Sync defaultViewBox + allowPanZoom into refs so the once-mounted
+    // wheel listener always reads the current values without needing to
+    // be torn down and re-attached on every props change.
+    useEffect(() => {
+        defaultViewBoxRef.current = defaultViewBox;
+    }, [defaultViewBox]);
+    useEffect(() => {
+        allowPanZoomRef.current = allowPanZoom;
+    }, [allowPanZoom]);
+
+    // ── Keyboard: Escape resets; Space toggles pan mode ──────────
+    useEffect(() => {
+        function onDown(e) {
             if (e.key === 'Escape') {
-                if (selectedIds && selectedIds.size > 0) {
+                // Two jobs: reset zoom AND (legacy) clear selection.
+                if (defaultViewBox) {
+                    setViewBoxState({
+                        x: defaultViewBox.vbX,
+                        y: defaultViewBox.vbY,
+                        w: defaultViewBox.vbW,
+                        h: defaultViewBox.vbH,
+                    });
+                }
+                if (selectedIds && selectedIds.size > 0 && !isSpaceDown) {
                     onSelectionChange(new Set());
                 }
             }
+            if (e.code === 'Space' && allowPanZoom) {
+                // Suppress the page-scroll default spacebar behavior, but
+                // only when focus is on the canvas (don't hijack spacebar
+                // in form inputs elsewhere in the app).
+                const target = e.target;
+                if (
+                    target &&
+                    (target === document.body ||
+                        (containerRef.current && containerRef.current.contains(target)))
+                ) {
+                    e.preventDefault();
+                }
+                setIsSpaceDown(true);
+            }
         }
-        window.addEventListener('keydown', onKey);
-        return () => window.removeEventListener('keydown', onKey);
-    }, [selectedIds, onSelectionChange]);
-
-    // Fallback pointerup handler so a drag that ends outside the svg still
-    // commits. Also catches touch releases outside the element.
-    useEffect(() => {
-        if (!lasso) return;
         function onUp(e) {
-            finalizeLasso(e);
+            if (e.code === 'Space') {
+                setIsSpaceDown(false);
+                setIsPanning(false);
+                panStartRef.current = null;
+            }
+        }
+        window.addEventListener('keydown', onDown);
+        window.addEventListener('keyup', onUp);
+        return () => {
+            window.removeEventListener('keydown', onDown);
+            window.removeEventListener('keyup', onUp);
+        };
+    }, [selectedIds, onSelectionChange, defaultViewBox, isSpaceDown, allowPanZoom]);
+
+    // ── Window-scoped pointerup fallback ─────────────────────────
+    useEffect(() => {
+        function onUp(e) {
+            // Close any in-flight interaction. Map cleanup first — touch
+            // releases need this even if there's no lasso / pan in play.
+            activePointersRef.current.delete(e.pointerId);
+            if (activePointersRef.current.size < 2) pinchStartRef.current = null;
+            if (activePointersRef.current.size === 0) {
+                panStartRef.current = null;
+                setIsPanning(false);
+            }
+            if (lasso) finalizeLasso();
         }
         window.addEventListener('pointerup', onUp);
         window.addEventListener('pointercancel', onUp);
@@ -109,6 +294,82 @@ export default function DesignPointsPlanView({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [lasso]);
 
+    // ── Wheel zoom (non-passive, attached manually so preventDefault works) ──
+    //
+    // Attached to the OUTER container div, not the SVG. A scrollable
+    // ancestor (e.g. app-main-content has `overflow: auto`) can capture
+    // wheel events before they bubble to a descendant SVG's listener —
+    // Safari is especially eager about this. Attaching on the container
+    // plus `overscrollBehavior: contain` below guarantees the handler
+    // receives every wheel tick that originates inside the canvas area.
+    //
+    // Empty dep array is load-bearing: the wrapper div is always rendered
+    // (see render below), so containerRef is populated by the time this
+    // effect fires for the first time. Attaching once-per-mount means the
+    // listener survives across defaultViewBox / viewBoxState updates — an
+    // earlier implementation retore the listener on every props change,
+    // and the window between teardown and re-attach was long enough for
+    // wheel events to fall through to the scrollable ancestor.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    useEffect(() => {
+        const wrapper = containerRef.current;
+        if (!wrapper) return;
+
+        function onWheel(e) {
+            // MUST call preventDefault FIRST — before any ref checks.
+            // React's synthetic onWheel prop is always passive in React
+            // 17+, so the native listener (this one) with {passive:false}
+            // is the only thing that can stop Safari / Chrome from
+            // scrolling the page underneath the canvas.
+            e.preventDefault();
+            if (!allowPanZoomRef.current) return;
+            if (!viewBoxRef.current || !defaultViewBoxRef.current) return;
+            wheelPendingRef.current = e;
+            if (wheelRafRef.current != null) return;
+            wheelRafRef.current = requestAnimationFrame(() => {
+                wheelRafRef.current = null;
+                const last = wheelPendingRef.current;
+                wheelPendingRef.current = null;
+                if (!last) return;
+                applyWheelZoom(last);
+            });
+        }
+
+        function applyWheelZoom(e) {
+            const vb = viewBoxRef.current;
+            const defaults = defaultViewBoxRef.current;
+            const svgEl = svgRef.current;
+            if (!vb || !defaults || !svgEl) return;
+            const svgPt = toSvgCoords(svgEl, e.clientX, e.clientY);
+            if (!svgPt) return;
+
+            const factor = e.deltaY < 0 ? 1 / WHEEL_ZOOM_STEP : WHEEL_ZOOM_STEP;
+            const currentScale = defaults.vbW / vb.w;
+            const nextScale = currentScale / factor;
+            const clamped = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, nextScale));
+            if (clamped === currentScale) return;
+
+            const newW = defaults.vbW / clamped;
+            const newH = defaults.vbH / clamped;
+            // Keep the cursor pinned to the same point on the plan.
+            const fx = (svgPt.x - vb.x) / vb.w;
+            const fy = (svgPt.y - vb.y) / vb.h;
+            const newX = svgPt.x - fx * newW;
+            const newY = svgPt.y - fy * newH;
+            const next = { x: newX, y: newY, w: newW, h: newH };
+            viewBoxRef.current = next;
+            setViewBoxState(next);
+        }
+
+        wrapper.addEventListener('wheel', onWheel, { passive: false });
+        return () => {
+            wrapper.removeEventListener('wheel', onWheel);
+            if (wheelRafRef.current != null) cancelAnimationFrame(wheelRafRef.current);
+            wheelRafRef.current = null;
+        };
+    }, []);
+
+    // ── Helpers for lasso / pan / pinch ──────────────────────────
     function commitLasso(l) {
         if (!l || !l.isDrag) return;
         const minX = Math.min(l.startX, l.currentX);
@@ -118,6 +379,8 @@ export default function DesignPointsPlanView({
         const inside = new Set();
         for (const p of designPoints) {
             if (typeof p.northing !== 'number' || typeof p.easting !== 'number') continue;
+            // Control points aren't valid lasso targets.
+            if (classification.get(p.id) === 'control') continue;
             const x = p.easting;
             const y = -p.northing;
             if (x >= minX && x <= maxX && y >= minY && y <= maxY) inside.add(p.id);
@@ -131,27 +394,89 @@ export default function DesignPointsPlanView({
         }
     }
 
-    function finalizeLasso(e) {
-        setLasso((prev) => {
-            if (!prev) return null;
-            if (prev.isDrag) {
-                commitLasso(prev);
-            } else {
-                // Empty-canvas click — clear selection
-                if (selectedIds && selectedIds.size > 0) onSelectionChange(new Set());
-            }
-            return null;
-        });
+    function finalizeLasso() {
+        // Side effects (onSelectionChange on the parent, commitLasso) must
+        // run in event-handler scope, NEVER inside a functional setState
+        // updater. Functional updaters are invoked by React during the
+        // render/update phase, which makes any parent setState call from
+        // inside them throw "Cannot update a component while rendering a
+        // different component". Read `lasso` directly — the window
+        // pointerup effect that calls us re-attaches on every lasso
+        // change, so the closure is always fresh.
+        if (!lasso) return;
+        if (lasso.isDrag) {
+            commitLasso(lasso);
+        } else if (selectedIds && selectedIds.size > 0) {
+            onSelectionChange(new Set());
+        }
+        setLasso(null);
     }
 
+    function togglePoint(id) {
+        if (classification.get(id) === 'control') return; // not selectable
+        const next = new Set(selectedIds);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        onSelectionChange(next);
+    }
+
+    function pinchCentroid() {
+        const pts = [...activePointersRef.current.values()];
+        if (pts.length < 2) return null;
+        const [a, b] = pts;
+        return {
+            clientX: (a.clientX + b.clientX) / 2,
+            clientY: (a.clientY + b.clientY) / 2,
+            dist: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY),
+        };
+    }
+
+    // ── Pointer events on the SVG ────────────────────────────────
     function onSvgPointerDown(e) {
-        // Only left/primary button for mouse; always allow touch/pen.
         if (e.pointerType === 'mouse' && e.button !== 0) return;
-        // If the pointer hit a point circle, let that handler run and skip lasso.
+
+        // Touch first — register the pointer regardless of target; we
+        // need to count fingers before deciding lasso vs pinch.
+        if (e.pointerType === 'touch') {
+            activePointersRef.current.set(e.pointerId, {
+                clientX: e.clientX,
+                clientY: e.clientY,
+            });
+            if (activePointersRef.current.size >= 2 && allowPanZoom) {
+                // Two-finger pinch starts — abort any in-flight lasso.
+                const c = pinchCentroid();
+                if (c && viewBoxRef.current) {
+                    pinchStartRef.current = {
+                        centroid: c,
+                        dist: c.dist,
+                        viewBox: { ...viewBoxRef.current },
+                    };
+                    setLasso(null);
+                    setIsPanning(true);
+                }
+                return;
+            }
+        }
+
+        // Spacebar + drag → pan (regardless of whether the pointer is on
+        // a point). Point onClick handlers check isPanning to suppress
+        // toggles during a pan drag.
+        if (isSpaceDown && allowPanZoom) {
+            e.preventDefault();
+            panStartRef.current = {
+                clientX: e.clientX,
+                clientY: e.clientY,
+                viewBox: viewBoxRef.current ? { ...viewBoxRef.current } : null,
+            };
+            setIsPanning(true);
+            return;
+        }
+
+        // If the pointer hit a point circle / triangle, let that handler
+        // run (it stops propagation on its own). Skip lasso init.
         if (e.target && e.target.getAttribute && e.target.getAttribute('data-pid')) return;
-        // Suppress the browser's native text-selection gesture for the drag
-        // we're about to start — the amber lasso rect is the only visual
-        // feedback we want during a drag.
+
+        // Suppress native text-selection gesture.
         e.preventDefault();
         const pt = toSvgCoords(svgRef.current, e.clientX, e.clientY);
         if (!pt) return;
@@ -169,12 +494,78 @@ export default function DesignPointsPlanView({
     }
 
     function onSvgPointerMove(e) {
-        // Track cursor for the hover tooltip
+        // Always track screen cursor for the hover tooltip.
         setCursor({ x: e.clientX, y: e.clientY });
+
+        // Keep the active-pointer map fresh for pinch math.
+        if (e.pointerType === 'touch' && activePointersRef.current.has(e.pointerId)) {
+            activePointersRef.current.set(e.pointerId, {
+                clientX: e.clientX,
+                clientY: e.clientY,
+            });
+        }
+
+        // Two-finger pan + pinch zoom.
+        if (pinchStartRef.current && activePointersRef.current.size >= 2) {
+            e.preventDefault();
+            const current = pinchCentroid();
+            const start = pinchStartRef.current;
+            if (!current || !start || !svgRef.current) return;
+            const svgW = svgRef.current.clientWidth || 1;
+            const svgH = svgRef.current.clientHeight || 1;
+
+            const scaleRatio = current.dist / (start.dist || 1);
+            const currentZoom = defaultViewBox.vbW / start.viewBox.w;
+            const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, currentZoom * scaleRatio));
+            const nextW = defaultViewBox.vbW / nextZoom;
+            const nextH = defaultViewBox.vbH / nextZoom;
+
+            // Pan: centroid delta in SVG units, adjusted so the initial
+            // centroid stays pinned to the same plan point at the new zoom.
+            const svgToX = (clientX) =>
+                start.viewBox.x + ((clientX - svgRef.current.getBoundingClientRect().left) / svgW) * start.viewBox.w;
+            const svgToY = (clientY) =>
+                start.viewBox.y + ((clientY - svgRef.current.getBoundingClientRect().top) / svgH) * start.viewBox.h;
+            const anchorSvgX = svgToX(start.centroid.clientX);
+            const anchorSvgY = svgToY(start.centroid.clientY);
+
+            // Pin the anchor to the current centroid's position in the
+            // viewport at the new scale.
+            const currentAnchorFracX = (current.clientX - svgRef.current.getBoundingClientRect().left) / svgW;
+            const currentAnchorFracY = (current.clientY - svgRef.current.getBoundingClientRect().top) / svgH;
+            const nextX = anchorSvgX - currentAnchorFracX * nextW;
+            const nextY = anchorSvgY - currentAnchorFracY * nextH;
+
+            const next = { x: nextX, y: nextY, w: nextW, h: nextH };
+            viewBoxRef.current = next;
+            setViewBoxState(next);
+            return;
+        }
+
+        // Desktop space+drag pan.
+        if (panStartRef.current) {
+            e.preventDefault();
+            const svgEl = svgRef.current;
+            const start = panStartRef.current;
+            if (!svgEl || !start.viewBox) return;
+            const rect = svgEl.getBoundingClientRect();
+            const dxPx = e.clientX - start.clientX;
+            const dyPx = e.clientY - start.clientY;
+            const svgPerPxX = start.viewBox.w / (rect.width || 1);
+            const svgPerPxY = start.viewBox.h / (rect.height || 1);
+            const next = {
+                x: start.viewBox.x - dxPx * svgPerPxX,
+                y: start.viewBox.y - dyPx * svgPerPxY,
+                w: start.viewBox.w,
+                h: start.viewBox.h,
+            };
+            viewBoxRef.current = next;
+            setViewBoxState(next);
+            return;
+        }
+
+        // Lasso update
         if (!lasso) return;
-        // Actively suppress text-selection on every move-while-dragging tick
-        // — some browsers begin selecting after the first few pixels even if
-        // pointerdown preventDefault was called.
         e.preventDefault();
         const dx = e.clientX - lasso.startScreenX;
         const dy = e.clientY - lasso.startScreenY;
@@ -189,42 +580,102 @@ export default function DesignPointsPlanView({
         });
     }
 
-    function togglePoint(id, shiftKey) {
-        const next = new Set(selectedIds);
-        if (next.has(id)) next.delete(id);
-        else next.add(id);
-        onSelectionChange(next);
+    function onSvgDoubleClick(e) {
+        if (!allowPanZoom || !defaultViewBox) return;
+        // Reset to fit-staking. Lasso / click should not also fire — swallow it.
+        e.stopPropagation();
+        setViewBoxState({
+            x: defaultViewBox.vbX,
+            y: defaultViewBox.vbY,
+            w: defaultViewBox.vbW,
+            h: defaultViewBox.vbH,
+        });
+        setLasso(null);
     }
 
-    // ── Empty state ───────────────────────────────────────────────
-    if (!bounds) {
+    // ── Empty state ──────────────────────────────────────────────
+    // Rendered INSIDE the always-mounted wrapper div so containerRef
+    // populates on first mount — the once-attached wheel listener
+    // depends on this. If we short-circuited and returned a different
+    // root element here, containerRef would stay null and the wheel
+    // listener would never bind.
+    const isEmpty = !defaultViewBox || !viewBoxState;
+
+    if (isEmpty) {
         return (
-            <div style={emptyCanvas}>
-                <span style={{ color: 'var(--text-muted)', fontSize: '13px' }}>
+            <div
+                ref={containerRef}
+                style={{
+                    position: 'relative',
+                    width: '100%',
+                    height: '100%',
+                    minHeight: '300px',
+                    userSelect: 'none',
+                    WebkitUserSelect: 'none',
+                    MozUserSelect: 'none',
+                    msUserSelect: 'none',
+                    touchAction: 'none',
+                    overscrollBehavior: 'contain',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: 'var(--bg-dark)',
+                    color: 'var(--text-muted)',
+                }}
+            >
+                <span style={{ fontSize: '13px' }}>
                     No design points loaded for this project yet.
                 </span>
             </div>
         );
     }
 
+    // ── Derived rendering values ─────────────────────────────────
+    const vb = viewBoxState;
+    const currentMaxDim = Math.max(vb.w, vb.h);
+
     // Size hierarchy: unselected (1x) < hovered (1.5x) < selected (2x).
-    // Gives a decisive amber "this point is part of my assignment" read
-    // without blowing out the plan density on large imports.
-    const baseRadius = Math.max(bounds.w, bounds.h) * 0.006;
-    const hoverRadius = Math.max(bounds.w, bounds.h) * 0.009;
-    const selectedRadius = Math.max(bounds.w, bounds.h) * 0.012;
-    const arrowSize = bounds.pad * 0.6;
+    // Keyed off the CURRENT viewBox so a zoom-in doesn't inflate points.
+    const baseRadius = currentMaxDim * 0.006;
+    const hoverRadius = currentMaxDim * 0.009;
+    const selectedRadius = currentMaxDim * 0.012;
+    const controlSize = currentMaxDim * 0.0072; // 1.2× staking base
 
-    // Arrow in top-right, scale bar in bottom-left — both in viewBox coords.
-    const arrowCx = bounds.vbX + bounds.vbW - bounds.pad * 0.5;
-    const arrowCy = bounds.vbY + bounds.pad * 0.5;
+    // Grid step adapts to current visible extent.
+    const gridStep = pickGridStep(Math.max(vb.w, vb.h));
+    const startE = Math.floor(vb.x / gridStep) * gridStep;
+    const endE = Math.ceil((vb.x + vb.w) / gridStep) * gridStep;
+    const startN = Math.floor(-(vb.y + vb.h) / gridStep) * gridStep;
+    const endN = Math.ceil(-vb.y / gridStep) * gridStep;
+    const gridVertical = [];
+    for (let e = startE; e <= endE; e += gridStep) gridVertical.push(e);
+    const gridHorizontal = [];
+    for (let n = startN; n <= endN; n += gridStep) gridHorizontal.push(n);
 
-    const sbX = bounds.vbX + bounds.pad * 0.4;
-    const sbY = bounds.vbY + bounds.vbH - bounds.pad * 0.4;
-    const sbLen = 50; // 50 feet in viewBox units
+    // Arrow in top-right, scale bar in bottom-left — placed relative to
+    // CURRENT viewBox so they stick to visible corners during pan/zoom.
+    const arrowSize = Math.min(vb.w, vb.h) * 0.08;
+    const arrowCx = vb.x + vb.w - arrowSize;
+    const arrowCy = vb.y + arrowSize;
 
-    // Tooltip content
+    // Scale bar
+    const svgWidthPx = svgRef.current?.clientWidth || 600;
+    const scale = pickScaleBar(vb.w, svgWidthPx);
+    const sbLenSvg = scale.feet;
+    const sbPadX = vb.w * 0.04;
+    const sbPadY = vb.h * 0.06;
+    const sbX = vb.x + sbPadX;
+    const sbY = vb.y + vb.h - sbPadY;
+
     const hoveredPoint = hoveredId ? designPoints.find((p) => p.id === hoveredId) : null;
+    const hoveredIsControl =
+        hoveredPoint ? classification.get(hoveredPoint.id) === 'control' : false;
+
+    const cursorStyle = isPanning
+        ? 'grabbing'
+        : isSpaceDown && allowPanZoom
+            ? 'grab'
+            : 'crosshair';
 
     return (
         <div
@@ -238,19 +689,24 @@ export default function DesignPointsPlanView({
                 MozUserSelect: 'none',
                 msUserSelect: 'none',
                 touchAction: 'none',
+                // Stop wheel events from chaining to a scrollable ancestor
+                // (app-main-content has overflow: auto). Combined with the
+                // container-scoped wheel listener, this guarantees the
+                // canvas always sees its own scroll gestures.
+                overscrollBehavior: 'contain',
             }}
         >
             <svg
                 ref={svgRef}
-                viewBox={`${bounds.vbX} ${bounds.vbY} ${bounds.vbW} ${bounds.vbH}`}
+                viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`}
                 preserveAspectRatio="xMidYMid meet"
                 role="img"
-                aria-label={`Design point plan — ${designPoints.length} points`}
+                aria-label={`Design point plan — ${stakingPoints.length} staking, ${controlPoints.length} control`}
                 style={{
                     display: 'block',
                     width: '100%',
                     height: '100%',
-                    cursor: lasso ? 'crosshair' : 'crosshair',
+                    cursor: cursorStyle,
                     backgroundColor: 'var(--bg-dark)',
                     userSelect: 'none',
                     WebkitUserSelect: 'none',
@@ -261,36 +717,36 @@ export default function DesignPointsPlanView({
                 onPointerDown={onSvgPointerDown}
                 onPointerMove={onSvgPointerMove}
                 onPointerLeave={() => setCursor(null)}
+                onDoubleClick={onSvgDoubleClick}
             >
                 {/* Grid */}
                 <g>
-                    {gridLines.map((ln, i) =>
-                        ln.type === 'v' ? (
-                            <line
-                                key={`v${i}`}
-                                x1={ln.c}
-                                y1={bounds.vbY}
-                                x2={ln.c}
-                                y2={bounds.vbY + bounds.vbH}
-                                stroke="var(--border-subtle)"
-                                strokeOpacity="0.4"
-                                strokeWidth="1"
-                                vectorEffect="non-scaling-stroke"
-                            />
-                        ) : (
-                            <line
-                                key={`h${i}`}
-                                x1={bounds.vbX}
-                                y1={-ln.c}
-                                x2={bounds.vbX + bounds.vbW}
-                                y2={-ln.c}
-                                stroke="var(--border-subtle)"
-                                strokeOpacity="0.4"
-                                strokeWidth="1"
-                                vectorEffect="non-scaling-stroke"
-                            />
-                        )
-                    )}
+                    {gridVertical.map((e, i) => (
+                        <line
+                            key={`v${i}`}
+                            x1={e}
+                            y1={vb.y}
+                            x2={e}
+                            y2={vb.y + vb.h}
+                            stroke="var(--border-subtle)"
+                            strokeOpacity="0.4"
+                            strokeWidth="1"
+                            vectorEffect="non-scaling-stroke"
+                        />
+                    ))}
+                    {gridHorizontal.map((n, i) => (
+                        <line
+                            key={`h${i}`}
+                            x1={vb.x}
+                            y1={-n}
+                            x2={vb.x + vb.w}
+                            y2={-n}
+                            stroke="var(--border-subtle)"
+                            strokeOpacity="0.4"
+                            strokeWidth="1"
+                            vectorEffect="non-scaling-stroke"
+                        />
+                    ))}
                 </g>
 
                 {/* Lasso rectangle */}
@@ -309,9 +765,40 @@ export default function DesignPointsPlanView({
                     />
                 )}
 
-                {/* Points */}
+                {/* Control points (rendered first so staking can paint over them if
+                    they happen to overlap visually at low zoom) */}
+                {showControlPoints &&
+                    controlPoints.map((p) => {
+                        if (typeof p.northing !== 'number' || typeof p.easting !== 'number') return null;
+                        const isHovered = hoveredId === p.id;
+                        const r = controlSize;
+                        const cx = p.easting;
+                        const cy = -p.northing;
+                        // Upward-pointing equilateral triangle, centered on (cx, cy).
+                        const top = `${cx},${cy - r}`;
+                        const bl = `${cx - r * 0.87},${cy + r * 0.5}`;
+                        const br = `${cx + r * 0.87},${cy + r * 0.5}`;
+                        return (
+                            <polygon
+                                key={p.id}
+                                data-pid={p.id}
+                                points={`${top} ${bl} ${br}`}
+                                fill={isHovered ? 'var(--brand-amber)' : 'var(--text-muted)'}
+                                stroke="var(--border-subtle)"
+                                strokeWidth="1.5"
+                                vectorEffect="non-scaling-stroke"
+                                style={{ cursor: isSpaceDown ? 'grab' : 'default' }}
+                                onPointerEnter={() => onHoverChange && onHoverChange(p.id)}
+                                onPointerLeave={() => onHoverChange && onHoverChange(null)}
+                                // No click handler — control points are reference
+                                // geometry, not selectable.
+                            />
+                        );
+                    })}
+
+                {/* Staking points */}
                 <g>
-                    {designPoints.map((p) => {
+                    {stakingPoints.map((p) => {
                         if (typeof p.northing !== 'number' || typeof p.easting !== 'number') return null;
                         const isSelected = selectedIds && selectedIds.has(p.id);
                         const isHovered = hoveredId === p.id;
@@ -321,7 +808,6 @@ export default function DesignPointsPlanView({
                         let fill;
                         let r;
                         if (isSelected) {
-                            // Amber selection trumps status — preserves lasso UX.
                             fill = 'var(--brand-amber)';
                             r = selectedRadius;
                         } else if (statusStyle) {
@@ -343,19 +829,21 @@ export default function DesignPointsPlanView({
                                 stroke="rgba(255,255,255,0.15)"
                                 strokeWidth="0.5"
                                 vectorEffect="non-scaling-stroke"
-                                style={{ cursor: 'pointer' }}
+                                style={{ cursor: isSpaceDown ? 'grab' : 'pointer' }}
                                 onPointerEnter={() => onHoverChange && onHoverChange(p.id)}
                                 onPointerLeave={() => onHoverChange && onHoverChange(null)}
                                 onClick={(e) => {
+                                    // Swallow clicks that were part of a pan drag.
+                                    if (isPanning || isSpaceDown) return;
                                     e.stopPropagation();
-                                    togglePoint(p.id, e.shiftKey);
+                                    togglePoint(p.id);
                                 }}
                             />
                         );
                     })}
                 </g>
 
-                {/* North arrow (top-right) */}
+                {/* North arrow (top-right of current viewBox) */}
                 <g transform={`translate(${arrowCx}, ${arrowCy})`}>
                     <path
                         d={`M 0 ${-arrowSize / 2} L ${arrowSize / 3} ${arrowSize / 2} L 0 ${arrowSize / 4} L ${-arrowSize / 3} ${arrowSize / 2} Z`}
@@ -374,12 +862,12 @@ export default function DesignPointsPlanView({
                     </text>
                 </g>
 
-                {/* Scale bar (bottom-left) */}
+                {/* Scale bar (bottom-left of current viewBox) */}
                 <g>
                     <line
                         x1={sbX}
                         y1={sbY}
-                        x2={sbX + sbLen}
+                        x2={sbX + sbLenSvg}
                         y2={sbY}
                         stroke="var(--text-muted)"
                         strokeWidth="1"
@@ -395,48 +883,102 @@ export default function DesignPointsPlanView({
                         vectorEffect="non-scaling-stroke"
                     />
                     <line
-                        x1={sbX + sbLen}
+                        x1={sbX + sbLenSvg}
                         y1={sbY - arrowSize * 0.15}
-                        x2={sbX + sbLen}
+                        x2={sbX + sbLenSvg}
                         y2={sbY + arrowSize * 0.15}
                         stroke="var(--text-muted)"
                         strokeWidth="1"
                         vectorEffect="non-scaling-stroke"
                     />
                     <text
-                        x={sbX + sbLen / 2}
+                        x={sbX + sbLenSvg / 2}
                         y={sbY + arrowSize * 0.45}
                         textAnchor="middle"
                         fill="var(--text-muted)"
                         fontSize={arrowSize * 0.4}
                         fontFamily="'JetBrains Mono', monospace"
                     >
-                        50 ft
+                        {scale.feet} ft
                     </text>
                 </g>
             </svg>
 
+            {/* Pan-mode badge */}
+            {isSpaceDown && allowPanZoom && (
+                <div style={panBadgeStyle}>PAN</div>
+            )}
+
             {/* Tooltip */}
             {hoveredPoint && cursor && containerRef.current && (
                 <Tooltip
+                    ref={tooltipRef}
+                    measuredRef={tooltipMeasuredRef}
                     point={hoveredPoint}
                     cursor={cursor}
                     containerEl={containerRef.current}
                     extraPointData={extraPointData}
+                    isControl={hoveredIsControl}
                 />
             )}
         </div>
     );
 }
 
-function Tooltip({ point, cursor, containerEl, extraPointData }) {
+// ── Tooltip ───────────────────────────────────────────────────────────
+// Smart positioning: the tooltip prefers "below-right of cursor" but flips
+// to above or left if it would overflow the canvas bounds. We guess the
+// tooltip height on first render (small vs. tall), then measure the real
+// height after mount via tooltipMeasuredRef.
+
+const Tooltip = React.forwardRef(function Tooltip(
+    { point, cursor, containerEl, extraPointData, isControl, measuredRef },
+    ref,
+) {
+    const localRef = useRef(null);
     const extra = extraPointData ? extraPointData.get(point.id) : null;
-    // Position tooltip relative to the container, offset from the cursor.
+
+    // Measure on mount / point change so the flip math has a real size
+    // on the next render.
+    useEffect(() => {
+        const el = localRef.current;
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
+        if (measuredRef) {
+            measuredRef.current = { w: rect.width, h: rect.height };
+        }
+    }, [point.id, extra, isControl, measuredRef]);
+
     const rect = containerEl.getBoundingClientRect();
-    const left = Math.min(cursor.x - rect.left + 14, rect.width - 220);
-    const top = Math.max(cursor.y - rect.top + 14, 8);
+    const measured = measuredRef?.current;
+    const w = measured?.w || TOOLTIP_BASE_W;
+    const h = measured?.h || (extra ? TOOLTIP_EXTRA_H : TOOLTIP_BASE_H);
+
+    // Default: below-right of cursor
+    let left = cursor.x - rect.left + TOOLTIP_EDGE_GAP;
+    let top = cursor.y - rect.top + TOOLTIP_EDGE_GAP;
+
+    // Flip horizontally if we'd overflow the right edge
+    if (left + w > rect.width - 8) {
+        left = cursor.x - rect.left - TOOLTIP_EDGE_GAP - w;
+    }
+    // Flip vertically if we'd overflow the bottom edge
+    if (top + h > rect.height - 8) {
+        top = cursor.y - rect.top - TOOLTIP_EDGE_GAP - h;
+    }
+
+    // Final clamp so a tiny canvas doesn't push the card off-screen in
+    // the opposite direction.
+    left = Math.max(8, Math.min(left, rect.width - w - 8));
+    top = Math.max(8, Math.min(top, rect.height - h - 8));
+
     return (
         <div
+            ref={(el) => {
+                localRef.current = el;
+                if (typeof ref === 'function') ref(el);
+                else if (ref) ref.current = el;
+            }}
             style={{
                 position: 'absolute',
                 left: `${left}px`,
@@ -455,6 +997,23 @@ function Tooltip({ point, cursor, containerEl, extraPointData }) {
                 zIndex: 5,
             }}
         >
+            {isControl && (
+                <div
+                    style={{
+                        display: 'inline-block',
+                        padding: '2px 6px',
+                        marginBottom: '6px',
+                        borderRadius: '4px',
+                        backgroundColor: 'rgba(148, 163, 184, 0.14)',
+                        color: 'var(--text-muted)',
+                        fontSize: '10px',
+                        letterSpacing: '0.6px',
+                        fontWeight: 700,
+                    }}
+                >
+                    CONTROL
+                </div>
+            )}
             <div
                 style={{
                     color: 'var(--brand-amber)',
@@ -548,39 +1107,9 @@ function Tooltip({ point, cursor, containerEl, extraPointData }) {
             )}
         </div>
     );
-}
+});
 
-function computeBounds(points) {
-    if (!points || points.length === 0) return null;
-    let minN = Infinity,
-        maxN = -Infinity,
-        minE = Infinity,
-        maxE = -Infinity;
-    for (const p of points) {
-        if (typeof p.northing !== 'number' || typeof p.easting !== 'number') continue;
-        if (p.northing < minN) minN = p.northing;
-        if (p.northing > maxN) maxN = p.northing;
-        if (p.easting < minE) minE = p.easting;
-        if (p.easting > maxE) maxE = p.easting;
-    }
-    if (!Number.isFinite(minN)) return null;
-    const w = Math.max(maxE - minE, 1);
-    const h = Math.max(maxN - minN, 1);
-    const pad = 0.1 * Math.max(w, h, 50);
-    return {
-        minN,
-        maxN,
-        minE,
-        maxE,
-        w,
-        h,
-        pad,
-        vbX: minE - pad,
-        vbY: -(maxN + pad),
-        vbW: w + 2 * pad,
-        vbH: h + 2 * pad,
-    };
-}
+// ── Styles ─────────────────────────────────────────────────────────────
 
 const emptyCanvas = {
     display: 'flex',
@@ -591,4 +1120,21 @@ const emptyCanvas = {
     minHeight: '300px',
     backgroundColor: 'var(--bg-dark)',
     color: 'var(--text-muted)',
+};
+
+const panBadgeStyle = {
+    position: 'absolute',
+    top: '12px',
+    left: '12px',
+    padding: '4px 10px',
+    backgroundColor: 'rgba(10, 15, 30, 0.85)',
+    border: '1px solid var(--brand-teal-light)',
+    borderRadius: '999px',
+    color: 'var(--brand-teal-light)',
+    fontSize: '10.5px',
+    fontWeight: 700,
+    letterSpacing: '1px',
+    fontFamily: "'JetBrains Mono', monospace",
+    pointerEvents: 'none',
+    zIndex: 6,
 };
