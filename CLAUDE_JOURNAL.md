@@ -71,6 +71,7 @@ These are canonical. Do not deviate without explicit discussion:
 - **CSS vars live in `src/index.css`:** `--brand-teal`, `--brand-teal-light`, `--brand-amber`, `--bg-dark`, `--bg-surface`, `--border-subtle`, `--text-main`, `--text-muted`, `--success`, `--error`. Utility classes: `.coordinate-data` (mono N/E/Z), `.btn-field` (52px glove-mode buttons).
 - **Previously single `App.jsx`** — now decomposing into components as scale requires, but maintain tight integration patterns.
 - **Zero-consumer-change integration pattern:** when extending shared components (e.g., DesignPointsPlanView), prefer internal state over lifting props so consumers don't need changes. Proven in Stages 8.5a/b.
+- **Layout concerns belong at the consumer-page level, NOT inside shared components.** Padding, margins, gutters, and breathing room cascade unpredictably when added to a shared component. Proven by commit 2c revert on 2026-04-23.
 - **Feature flag dev-only tools:** `import.meta.env.DEV` gates (e.g., AssignmentTestDataSeeder).
 - **Migrations in `supabase/migrations/`** — numbered, versioned, descriptive names.
 
@@ -90,7 +91,7 @@ These are canonical. Do not deviate without explicit discussion:
 | 8 | Crew PWA infrastructure (service worker, IndexedDB, sync manager) | ✅ Shipped (`3d7b794`) |
 | 8.5a | Plan view production-scale (pan/zoom, control detection, intelligent default zoom) | ✅ Shipped (`9438d45`) |
 | 8.5b-core | Feature-code color palette, shape differentiation, control triangle 2x, labels | ✅ Shipped (`9cb8dfc`) |
-| **8.5b-polish** | **Filter chips, legend, zoom-to-point, label collision, zoom-responsive sizing** | **🔧 IN PROGRESS** |
+| **8.5b-polish** | **Filter chips, legend, zoom-to-point, label collision, zoom-responsive sizing** | **🔧 IN PROGRESS (commits 1, 2, 2b shipped; commit 2c reverted)** |
 | 9 | Crew field view UI (mobile-first) + push notifications (iOS 16.4+ caveat) | ⏳ Pending |
 | 10 | Crew session upload + field-fit workflow + QC compute kickoff | ⏳ Pending |
 | 11 | Accuracy narratives (Supabase edge function + pg_cron, Claude-generated summaries) | ⏳ Pending |
@@ -101,20 +102,20 @@ These are canonical. Do not deviate without explicit discussion:
 
 ---
 
-## Current State (as of 2026-04-22, end of session)
+## Current State (as of 2026-04-23, end of session)
 
 **Git:**
-- Main feature branch: `feature/stakeout-qc` at `9cb8dfc` (Stage 8.5b-core, clean, working)
-- WIP (broken polish attempt): `feature/stakeout-qc-85b-polish-wip` pushed to origin for reference
+- Feature branch: `feature/stakeout-qc` at `a73039e` (revert of commit 2c). Functionally equivalent to `c35c00c` (Stage 8.5b-polish 2b).
+- All progress pushed to origin. No WIP branches in flight beyond `feature/stakeout-qc-85b-polish-wip` (broken reference only).
 - Working tree: clean
 
 **Environment:**
-- Vite: `http://localhost:5174` (port 5173 was in use)
+- Vite: `http://localhost:5174` (port 5173 in use)
 - Claude Code CLI: active
 
-**Test dataset:** 513-point allpoints CSV loaded in project "8.5A_TESTING" (Scottsdale, 3234 N. Scottsdale Rd). 488 staking points, 25 control points clustered in ~300×400 ft site. Real Arizona State Plane coordinates (~901391N, ~520795E, ~1175.5Z). Contains "CP_PRI RBCC" control point — exposed classification bug previously, now fixed.
+**Test dataset:** unchanged — 513-point "8.5A_TESTING" project.
 
-**Next action:** Rebuild 8.5b-polish clean on `feature/stakeout-qc` via Path 2 (rebuild, don't debug). Extract WIP children via `git show` as reference. Tighter Claude Code prompt with explicit constraint: DO NOT restructure outer wrapper of DesignPointsPlanView.
+**Next action (tomorrow):** Resume Stage 8.5b-polish. Do NOT re-attempt commit 2c's approach (wrapper padding inside DesignPointsPlanView). Layout breathing room, if addressed, lives at the consumer-page level, not the shared component. Proceed to commit 3 (Find-point popover) first; then commit 4 (label collision + zoom-responsive point sizing). Re-evaluate layout + grid styling after commit 4 ships.
 
 ---
 
@@ -128,9 +129,11 @@ Five features, four deliverable components:
 4. **Feature legend** — toggleable panel, prominent color-swatch button ("[🟢🟡🔵⚪] Legend"), shape indicators match canvas
 5. **Zoom-to-point popover** — autocomplete (point ID or feature code), preset distances (5/15/50/100ft + custom), 300ms animated zoom, highlight ring
 
-**Known failure mode from WIP attempt:** Claude Code restructured the canvas into `outerWrapperRef` (flex column) + inner `containerRef` (wheel listener). That restructure broke: layout overflow, wheel zoom, pan, double-click reset, pinch zoom, Find Point button stuck state. **Do not repeat this architectural choice.** Toolbar must be a sibling above the canvas container, not a parent wrapping it.
+**Known failure mode from original WIP attempt (2026-04-22):** Claude Code restructured the canvas into `outerWrapperRef` (flex column) + inner `containerRef` (wheel listener). That restructure broke: layout overflow, wheel zoom, pan, double-click reset, pinch zoom, Find Point button stuck state. **Do not repeat this architectural choice.** Toolbar must be a sibling above the canvas container, not a parent wrapping it.
 
-**Commit strategy for rebuild:** incremental — toolbar + chips first (commit), then legend (commit), then zoom-to-point (commit).
+**Second failure mode (2026-04-23, commit 2c):** Adding horizontal padding to DesignPointsPlanView's outer flex wrapper to create "breathing room" against viewport edges. This cascaded badly to the AssignmentDetail QC view, where the absolutely-positioned "Seed test QC data" dev button began overlapping the Legend button. Reverted. **Do not add layout padding inside shared components.**
+
+**Commit strategy for rebuild:** incremental — toolbar + chips first (commit 1 ✅), legend (commit 2 ✅), UX fixes (commit 2b ✅), zoom-to-point popover (commit 3), render-loop polish (commit 4).
 
 ---
 
@@ -154,6 +157,8 @@ Five features, four deliverable components:
 
 **Status precedence in rendering:** SELECTED (amber) > STATUS (in_tol/out_of_tol/etc) > FEATURE_CODE > default teal.
 
+**Product decision deferred:** In AssignmentDetail's QC view, `pointStatusMap` causes every pending point to render teal, fully suppressing feature-code colors. Options for later: dual-channel (fill=status, border=feature_code), explicit toggle, or leave as-is (status is the primary signal in QC view). Not a bug — product decision to revisit after commit 4.
+
 ---
 
 ## Key Design Decisions (Locked)
@@ -166,6 +171,8 @@ Five features, four deliverable components:
 - **Pricing positioning:** Stakeout QC is premium feature of top tier
 - **Filter behavior:** hide entirely, don't dim (dark-mode canvas makes dimming ineffective)
 - **Labels at high zoom:** auto-appear when avg point spacing > 40px; lowest `point_id` wins collision
+- **Toolbar chip overflow:** hide 0-count chips by default, inline `+N` / `−` toggle chip expands/collapses; `flex-wrap: wrap` handles dense datasets instead of horizontal scroll (shipped commit 2b)
+- **Layout concerns (padding, margins, breathing room):** live at consumer-page level only. Never add to shared components.
 
 ---
 
@@ -181,9 +188,10 @@ Current PM-facing build targets scheduler/dispatch persona. Licensed PMs who own
 
 - **[BUG]** Stage 7b.1 edit-points removes `stakeout_assignment_points` but CASCADE doesn't reach `stakeout_qc_points`. Manifested in 7b.2 testing, fixed manually. Stage 13 SQL fix needed.
 - **[BUG]** Stage 7a seeder may create observations for design points not in `assignment_points`. Data integrity issue.
-- **[TECH DEBT]** `AssignmentDetail.jsx` at 1549 lines. `DesignPointsPlanView.jsx` at 1310 lines (core) / 1493 lines (WIP polish). Stage 13 refactor candidates: extract `PointList` (~300 lines), `ResendConfirmModal` (~100 lines), `PointGlyph` (~90 lines), `Tooltip` (~250 lines).
+- **[TECH DEBT]** `AssignmentDetail.jsx` at 1549 lines. `DesignPointsPlanView.jsx` at 1378 lines post-commit 2b. Stage 13 refactor candidates: extract `PointList` (~300 lines), `ResendConfirmModal` (~100 lines), `PointGlyph` (~90 lines), `Tooltip` (~250 lines).
 - **[DEFERRED]** Stacked points UX: control point + daily check shots stack at same location, no way to view/click each. Needs data model decision (check shot = observation vs separate table) before visualization.
 - **[DEFERRED]** "Controls off-view" indicator when user zooms away from control points.
+- **[DEFERRED VISUAL]** Grid styling uniform strokeOpacity 0.4 at every zoom reads as noisy. Consider tiered grid (stronger major lines at round intervals, faint minor lines between) after commit 4 ships — the zoom-responsive point sizing + label dedup may already resolve the perception.
 
 ---
 
@@ -191,6 +199,7 @@ Current PM-facing build targets scheduler/dispatch persona. Licensed PMs who own
 
 - **Firm-level custom feature code libraries.** Every firm uses slightly different codes (TBC vs BCURB vs CURB). Build "Firm Settings → Feature Code Library" admin panel where firms upload CSV mapping their codes to SurveyOS canonical with optional color overrides. Architecture: Phase 1 uses canonical; Phase 2 wraps with per-firm override layer.
 - **Role-scoped dashboards** — see PM Persona Gap above.
+- **Feature-code color visibility in QC view.** Status-color precedence currently hides feature-code colors in AssignmentDetail. Dual-channel rendering (fill=status, border=feature) or user-toggle is the likely solution.
 
 ---
 
@@ -204,11 +213,13 @@ Current PM-facing build targets scheduler/dispatch persona. Licensed PMs who own
 
 - **Wheel zoom + React + Safari:** `onWheel` prop is passive by default — can't preventDefault. Attach via `useEffect` + `addEventListener` with `{ passive: false }`.
 - **Ancestor scroll containers fight for wheel events.** Use `overscroll-behavior: contain` on wrapper.
+- **Overlay UI inside a canvas needs scroll bypass.** Canvas wheel handler should `closest('[data-canvas-scroll-region]')` check first and skip its `preventDefault` when true. Put the marker attribute on the outermost panel div so all descendants (header, body, buttons) match via the ancestor walk.
 - **Empty-state early return breaks refs.** Always mount wrapper, conditionally render content inside.
 - **Functional setState calling callbacks during render = infinite loop.** Use imperative setState for render-phase updates.
 - **Empty `useEffect` deps + ref-based reads = correct pattern for once-per-mount event listeners.**
 - **React 18 StrictMode mounts twice in dev.** Cleanup handlers matter.
 - **Zero-consumer-change integration pattern:** lift ZERO state to parents when extending shared components. All integration through component's internal state. Proven across AssignmentBuilder, AssignmentDetail, AssignmentPointsEditor.
+- **Layout concerns don't belong inside shared components.** Padding, margins, and horizontal breathing room cascade unpredictably to every consumer. The "Seed test QC data" dev button in AssignmentDetail is absolutely positioned and depends on the shared canvas NOT restructuring its own layout. Solve layout at the page level (AssignmentBuilder page, AssignmentDetail page, AssignmentPointsEditor page), never inside DesignPointsPlanView.
 
 ---
 
@@ -235,10 +246,35 @@ Current PM-facing build targets scheduler/dispatch persona. Licensed PMs who own
 - Descriptive commit messages naming the stage and what shipped
 - WIP branches for experimental work, never merge broken to feature branch
 - Push regularly
+- When a commit causes cross-view regressions (view A looks fine, view B breaks), `git revert` the commit cleanly rather than trying to patch-fix. Revert preserves history and keeps the branch shippable.
 
 ---
 
 ## Session Log
+
+### 2026-04-23 — Stage 8.5b-polish commits 1, 2, 2b, 2c (reverted)
+
+**Shipped:**
+- Commit 1 (`2cd1396`): feature-group filter chips + canvas toolbar scaffold. New `featureCodeGroups.js`, `CanvasToolbar.jsx`. All 22 regression checks green.
+- Commit 2 (`51008e9`): feature legend panel + toggle. New `FeatureLegend.jsx`, `featureName()` export added to `featureCodeStyles.js`.
+- Commit 2b (`c35c00c`): legend wheel-scroll fix via `data-canvas-scroll-region` attribute + `closest()` bypass in canvas wheel handler; toolbar chip overflow polish (hide 0-count chips with inline `+N` / `−` expand toggle, `flex-wrap` instead of horizontal scroll).
+
+**Reverted:**
+- Commit 2c (`7391bf4` → reverted by `a73039e`): attempted canvas/toolbar horizontal breathing room via wrapper padding on DesignPointsPlanView's outer flex container. Revert triggered by visual testing in AssignmentDetail QC view, where the wrapper padding caused the dev-only "Seed test QC data" button to overlap the Legend button. Lesson banked: padding inside a shared component cascades to every consumer; layout breathing room belongs at the consumer-page level.
+
+**Open for next session:**
+- **Commit 3: Find-point popover** (autocomplete by `point_id` or feature_code, preset zoom distances 5/15/50/100 + custom, 300ms animated zoom, fade-out highlight ring). Reference implementation in `/tmp/wip_popover.jsx` from the WIP branch (portaled, state-pure). Parent must implement a clean toggle pattern — the "stuck after first click" bug in the original WIP lived in the parent, not the popover.
+- **Commit 4: render-loop polish** — label collision avoidance (AABB overlap, lowest `point_id` wins) and zoom-responsive point sizing (log-scale boost up to 2x at deep zoom). Expected to resolve two visual complaints: tiny-dots-at-5ft-scale and label-soup-at-50ft-scale.
+- **Deferred product decision:** AssignmentDetail QC view feature-code color visibility (tracked in Phase 2 Feature Requests).
+- **Deferred visual polish:** grid styling (tracked in Known Bugs → Deferred Visual).
+- **Layout breathing room:** re-think at parent-page level when it comes up. Sidebar-eats-space is part of the cramped feeling; a sidebar collapse toggle or responsive breakpoint may be the right answer rather than component padding.
+
+**Decided this session:**
+- Layout concerns belong at consumer-page level only — added to Architectural Constraints as non-negotiable.
+- Toolbar chip overflow UX locked (hide 0-count + inline `+N` / `−` toggle + wrap).
+- Legend wheel-scroll pattern locked (`data-canvas-scroll-region` on outermost panel div + `closest()` bypass in canvas handler).
+
+---
 
 ### 2026-04-22 — Stage 8.5b attempt & rebuild plan
 
