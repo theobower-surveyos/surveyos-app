@@ -74,6 +74,7 @@ These are canonical. Do not deviate without explicit discussion:
 - **Layout concerns belong at the consumer-page level, NOT inside shared components.** Padding, margins, gutters, and breathing room cascade unpredictably when added to a shared component. Proven by commit 2c revert on 2026-04-23.
 - **Feature flag dev-only tools:** `import.meta.env.DEV` gates (e.g., AssignmentTestDataSeeder).
 - **Migrations in `supabase/migrations/`** — numbered, versioned, descriptive names.
+- **Role-based routing in App.jsx:** `user_profiles.role IN ('field_crew', 'party_chief')` routes to `CrewApp`; all other authenticated roles route to desktop CommandCenter. Pure role-based, no viewport-width check.
 
 ---
 
@@ -92,32 +93,76 @@ These are canonical. Do not deviate without explicit discussion:
 | 8.5a | Plan view production-scale (pan/zoom, control detection, intelligent default zoom) | ✅ Shipped (`9438d45`) |
 | 8.5b-core | Feature-code color palette, shape differentiation, control triangle 2x, labels | ✅ Shipped (`9cb8dfc`) |
 | 8.5b-polish | Filter chips, legend, zoom-to-point, label collision, zoom-responsive sizing | ✅ Shipped (`5418c8f`) |
-| **9** | **Crew field view UI (mobile-first) + push notifications (iOS 16.4+ caveat)** | **⏳ Next** |
-| 10 | Crew session upload + field-fit workflow + QC compute kickoff | ⏳ Pending |
+| 9 (minus 9.5 push) | Crew field view UI (mobile-first) — shell, today list, upcoming list, assignment detail, scope checklist, chief field notes, status transitions | ✅ Shipped (`b2e545c`) |
+| 9.5 | Push notifications (iOS 16.4+ caveat) | ⏸ Deferred — see Deferred Stages |
+| **10** | **Crew session upload + field-fit workflow + QC compute kickoff** | **⏳ Next** |
 | 11 | Accuracy narratives (Supabase edge function + pg_cron, Claude-generated summaries) | ⏳ Pending |
 | 12 | Integration (CommandCenter tile, nav wiring, MorningBrief, client portal) | ⏳ Pending |
-| 13 | Testing + polish (refactor, CASCADE fix, seeder fix, file-size refactor, off-view indicator, stacked points UX, Safari deep-zoom label fix, control-point selectability, export controls CSV, grid tiering) | ⏳ Pending |
+| 13 | Testing + polish (refactor, CASCADE fix, seeder fix, file-size refactor, off-view indicator, stacked points UX, Safari deep-zoom label fix, control-point selectability, export controls CSV, grid tiering, snapshot export, RLS tightening) | ⏳ Pending |
 
-**Progress:** 12/13 stages = ~92%.
+**Progress:** 13/13 stages partially complete — Stage 9 shipped minus the push sub-stage; Stage 10 is next.
 
 ---
 
 ## Current State (as of 2026-04-24, end of session)
 
 **Git:**
-- Feature branch: `feature/stakeout-qc` at `5418c8f` (Stage 8.5b-polish 4b: cap label halo at deep zoom). Stage 8.5b-polish fully shipped.
+- Feature branch: `feature/stakeout-qc` at `b2e545c` (Stage 9.4c: drop checklist flicker + detime submit message + drop 'reconcile' copy).
 - All progress pushed to origin.
 - WIP branch `feature/stakeout-qc-85b-polish-wip` remains on origin as reference only — no longer needed.
-- Working tree: clean
+- Working tree: clean.
 
 **Environment:**
 - Vite: `http://localhost:5174` (port 5173 in use)
 - Claude Code CLI: active
-- Primary test browser: Safari (Chrome also works; see Safari-specific bug in Known Bugs)
+- Primary test browser: Safari (desktop + responsive mode for mobile testing)
 
-**Test dataset:** unchanged — 513-point "8.5A_TESTING" project.
+**Test data state:**
+- 513-point "8.5A_TESTING" project still the main Stakeout QC test dataset
+- Two assignments attached to `theo@surveyos.com` as `party_chief`: `8.5_TESTING` dated today (CURRENT_DATE), `Test Alpha` dated +3 days. Both status `sent`, both reset to empty state by Stage 9 testing SQL
+- Migration 15 applied: `stakeout_assignments` has new `scope_checklist jsonb` + `chief_field_notes text` columns
+- New RLS policy applied: "Field roles update own assignments" — party_chief/field_crew can UPDATE their own assigned rows. Stage 13 item: tighten via DB trigger or RPC to restrict column writes.
 
-**Next action:** Stage 9 — crew field view UI (mobile-first) + push notifications (iOS 16.4+ caveat). This is the first mobile-facing work in the project; expect to spend early session time on the PWA shell and route structure before touching the QC-specific screens.
+**Next action:** Stage 10 — crew session upload + field-fit workflow + QC compute kickoff. Chief uploads CSV export from Trimble Access; SurveyOS matches observations to design points, computes deltas, auto-populates QC statuses. First scope discussion with Theo before writing prompts.
+
+---
+
+## Stage 9 Recap (what shipped)
+
+Commits on `feature/stakeout-qc`:
+- `480d02b` — 9.1: Crew mobile app shell + role-based routing fork
+- `a4c919b` — 9.2: Today's assignments list with real Supabase data
+- `ec6da51` — 9.3: Upcoming tab + extract shared `useCrewAssignments` hook
+- `a88a866` — 9.4a: Crew assignment detail + status transitions
+- `1ef7783` — 9.4b: Scope checklist + chief field notes, drop plan view
+- `b2e545c` — 9.4c: Drop checklist flicker + detime submit message + drop 'reconcile'
+
+Architecture:
+- `src/components/crew/CrewApp.jsx` — mobile shell with header + 3-tab bottom nav (Today / Upcoming / Profile), sticky above and below with `env(safe-area-inset-*)` padding
+- `src/components/crew/CrewToday.jsx`, `CrewUpcoming.jsx`, `CrewProfile.jsx` — tab contents
+- `src/components/crew/AssignmentCard.jsx` — reusable card for list rendering with status pill + relative date
+- `src/components/crew/CrewAssignmentDetail.jsx` — three-mode detail screen driven by assignment status (`sent` = pre-work info, `in_progress` = active work with scope checklist + tolerances + field notes, `submitted` = read-only summary)
+- `src/components/crew/ScopeChecklist.jsx` — interactive checklist with optimistic local state + Supabase write on tap (no parent refresh — avoids flicker)
+- `src/components/crew/ChiefFieldNotes.jsx` — textarea with 800ms debounced auto-save and transient "Saved" indicator
+- `src/components/crew/ConfirmSubmitModal.jsx` — bottom-sheet confirm dialog for Submit for QC
+- `src/hooks/useCrewAssignments.js` — fetches assignment list with `today_and_prior` or `upcoming` date filter
+- `src/hooks/useCrewAssignmentDetail.js` — single-assignment fetch with `refresh()` for status transitions
+
+Plan view removed from crew detail entirely — chiefs use Trimble Access for field navigation; SurveyOS plan view is noise in the field context. Future replacement: PDF attachment area where PM uploads plan sheets, topo limits, etc. (memory-tracked as Stage 9+/Phase 2 feature).
+
+---
+
+## Deferred Stages
+
+### Stage 9.5 — Push notifications (iOS 16.4+)
+
+Deferred indefinitely. Rationale:
+- Push is convenience, not capability — a chief can open the app manually and get the same workflow
+- Cross-system scope (frontend, service worker, Supabase DB, Supabase Edge Functions, iOS/Android browser push stacks) makes debugging expensive; realistic estimate is 4–6 hours with possible blow-out to 8+
+- Stage 10 (crew session upload + QC compute) is the demo-worthy capability that sells design partners; push is not
+- Better to build push once we know what real events exist to notify about (e.g., "PM reconciled your work")
+
+Slot whenever Theo has a focused weekend block OR when a design partner explicitly requests it. Infrastructure to preserve: Stage 8 already shipped the service worker scaffold, so push adds onto that cleanly when we return.
 
 ---
 
@@ -151,7 +196,8 @@ These are canonical. Do not deviate without explicit discussion:
 - **Feature-code grammar:** `FEATURE-OFFSET-STAKETYPE` (e.g., `TBC-5FT-HUB`)
 - **PM sets WHAT to stake; chief decides HOW in field** — division of authority
 - **Vertical QC (`v_status`) null in Phase 1** — defer to Phase 2
-- **Vocabulary:** "reconciled" status enum: draft → sent → in_progress → submitted → reconciled
+- **Vocabulary (DB-level):** status enum: draft → sent → in_progress → submitted → reconciled
+- **Vocabulary (crew-UX-level):** "reconcile" language dropped in crew-facing copy (accountant verbiage, doesn't fit surveying industry). DB enum stays `reconciled`; UX reads "Your work has been submitted. The PM will take it from here." Stage 13 may rename DB enum but low priority.
 - **Pricing positioning:** Stakeout QC is premium feature of top tier
 - **Filter behavior:** hide entirely, don't dim (dark-mode canvas makes dimming ineffective)
 - **Labels at high zoom:** auto-appear when avg point spacing > 40px; lowest `point_id` wins collision
@@ -159,6 +205,9 @@ These are canonical. Do not deviate without explicit discussion:
 - **Layout concerns (padding, margins, breathing room):** live at consumer-page level only. Never add to shared components.
 - **Find-point parent toggle pattern:** always re-capture `anchorRect` from `e.currentTarget.getBoundingClientRect()` on click and always set visibility true. Separate close path (Escape, outside-click, Cancel, successful zoom) handles hide. Avoids stuck-after-first-click bug class.
 - **Zoom-responsive point sizing formula:** `boost = 1 + log2(zoomRatio) * 0.35`, clamped to `[1, 2]`. Floor at 1x prevents shrinking when zoomed out past default.
+- **Crew UX principle: incognito time tracking.** "Start work" / "Submit for QC" timestamps persist in DB (`sent_at`, `submitted_at`) but are NOT displayed to the chief. Chiefs are sensitive about being tracked; time logging must be disguised as useful workflow tools. Future project-snapshot export on submit doubles as timesheet AND time-log (deferred to Stage 10 or 13).
+- **Crew detail plan view removed.** Chiefs use Trimble Access for field navigation; SurveyOS plan view in crew detail is noise. Future: PDF attachment upload by PM, download/view by chief.
+- **Role-based routing (not viewport-based):** `party_chief` and `field_crew` roles always route to CrewApp, even on desktop. Office roles always route to CommandCenter. No viewport-width check.
 
 ---
 
@@ -166,7 +215,7 @@ These are canonical. Do not deviate without explicit discussion:
 
 Current PM-facing build targets scheduler/dispatch persona. Licensed PMs who own client relationships and projects without doing crew scheduling are not yet addressed.
 
-**Solution (Phase 1.5/Phase 2 opener):** Role-scoped dashboards via Option D — add `role` field to `user_profiles`, role-specific default dashboards, navigation visibility by role, separate role for `firm_owner`/PLS.
+**Solution (Phase 1.5/Phase 2 opener):** Role-scoped dashboards via Option D — add `role` field to `user_profiles` (already exists), role-specific default dashboards, navigation visibility by role, separate role for `firm_owner`/PLS.
 
 ---
 
@@ -175,12 +224,19 @@ Current PM-facing build targets scheduler/dispatch persona. Licensed PMs who own
 - **[BUG]** Stage 7b.1 edit-points removes `stakeout_assignment_points` but CASCADE doesn't reach `stakeout_qc_points`. Manifested in 7b.2 testing, fixed manually. Stage 13 SQL fix needed.
 - **[BUG]** Stage 7a seeder may create observations for design points not in `assignment_points`. Data integrity issue.
 - **[TECH DEBT]** `AssignmentDetail.jsx` at 1549 lines. `DesignPointsPlanView.jsx` at ~1500 lines post-Stage-8.5b-polish. Stage 13 refactor candidates: extract `PointList` (~300 lines), `ResendConfirmModal` (~100 lines), `PointGlyph` (~90 lines), `Tooltip` (~250 lines).
+- **[TECH DEBT]** Two Supabase client import patterns coexist: direct `import { supabase } from './supabaseClient'` (used by crew components and Auth) vs. prop-drilled `supabase` (used by AssignmentsList and older components). Stage 13 could pick one.
 - **[DEFERRED]** Stacked points UX: control point + daily check shots stack at same location, no way to view/click each. Needs data model decision (check shot = observation vs separate table) before visualization.
 - **[DEFERRED]** "Controls off-view" indicator when user zooms away from control points.
 - **[DEFERRED VISUAL]** Grid styling uniform strokeOpacity 0.4 at every zoom reads as noisy. Consider tiered grid (stronger major lines at round intervals, faint minor lines between). Re-evaluate during Stage 13; the zoom-responsive point sizing + label dedup from commit 4 already resolved most of the perceived clutter.
 - **[DEFERRED VISUAL]** Labels invisible at extreme zoom (1–2ft viewBox) in Safari. WebKit refuses to render SVG text when computed `font-size` drops below ~0.05px. Chrome renders fine. Best fix: HTML overlay labels positioned over SVG via screen-space math, rather than SVG `<text>` with sub-pixel sizes.
 - **[DEFERRED UX]** Control points non-selectable. Intentional Stage 8.5a decision that blocks adding them to assignments. Needs UX design: toolbar mode selector, Alt-key modifier, or sidebar "include controls" checkbox.
 - **[DEFERRED FEATURE]** "Export controls to CSV" button. Iterate classified controls, format N/E/Z, trigger download. Belongs on AssignmentBuilder page or a project-tools panel.
+- **[DEFERRED FEATURE]** Project snapshot PNG export on chief submit. Includes project number/name, scope checklist final state, crew name, and incognito time log (start→submit duration). Chief saves to phone photos. Doubles as weekly timesheet AND disguised time tracking. Est. ~1 hr; candidate for Stage 10 or Stage 13.
+- **[DEFERRED FEATURE]** PM-side scope checklist authoring in AssignmentBuilder. Currently chiefs can only tick items; PM must seed checklist via SQL. Phase 1.5 or Stage 13. Data model: `stakeout_assignments.scope_checklist jsonb` array of `{id, label, done}`.
+- **[DEFERRED FEATURE]** PDF attachment area on crew assignment detail. PM uploads plan sheets, topo limits, site maps, easement docs when building assignment. Chief downloads/views in crew detail. Replaces the removed plan view. Consider PDF viewer lib or download-to-device pattern.
+- **[DEFERRED FEATURE]** GPS tracking of "Start work" tap — capture lat/lon alongside timestamp to prove on-site. Useful for billing disputes and DOT/federal compliance. Privacy/consent UX needs design.
+- **[DEFERRED SECURITY]** Sandbox RLS policies (tracked in auth_roles_status.md). Several tables have `Sandbox Master` policies granting `ALL` to `authenticated` users — legacy dev bypasses. Scope or remove before first paying pilot.
+- **[DEFERRED SECURITY]** Field role UPDATE permission on `stakeout_assignments` is row-level only (their assigned rows, any column). Tighten via DB trigger or Supabase RPC to restrict column writes to `status + submitted_at + chief_field_notes + scope_checklist` only. Current approach accepted for speed; revisit before first paying pilot.
 
 ---
 
@@ -207,12 +263,16 @@ Current PM-facing build targets scheduler/dispatch persona. Licensed PMs who own
 - **Functional setState calling callbacks during render = infinite loop.** Use imperative setState for render-phase updates.
 - **Empty `useEffect` deps + ref-based reads = correct pattern for once-per-mount event listeners.**
 - **React 18 StrictMode mounts twice in dev.** Cleanup handlers matter.
-- **Zero-consumer-change integration pattern:** lift ZERO state to parents when extending shared components. All integration through component's internal state. Proven across AssignmentBuilder, AssignmentDetail, AssignmentPointsEditor.
+- **Zero-consumer-change integration pattern:** lift ZERO state to parents when extending shared components. All integration through component's internal state. Proven across AssignmentBuilder, AssignmentDetail, AssignmentPointsEditor, plus crew components.
 - **Layout concerns don't belong inside shared components.** Padding, margins, and horizontal breathing room cascade unpredictably to every consumer. The "Seed test QC data" dev button in AssignmentDetail is absolutely positioned and depends on the shared canvas NOT restructuring its own layout. Solve layout at the page level (AssignmentBuilder page, AssignmentDetail page, AssignmentPointsEditor page), never inside DesignPointsPlanView.
 - **Find-point parent toggle pattern:** for a portaled popover anchored to a toolbar button, ALWAYS re-capture `e.currentTarget.getBoundingClientRect()` on click and ALWAYS set visibility true (don't toggle-via-`!prev`). A separate close path (Escape / outside-click / Cancel button / successful zoom) handles hide. This avoids the stuck-after-first-click bug class where a cached anchor rect or a toggle race leaves the popover in an inconsistent state.
 - **Log-scale zoom-responsive sizing:** `boost = 1 + log2(zoomRatio) * 0.35`, clamped `[1, 2]`. At 2x zoom → 1.35x, at 4x → 1.7x, at 8x+ → capped 2x. Floor at 1x prevents shrinking below default when zoomed out. Feels proportional without exploding.
 - **Label AABB collision, first-render-wins:** sort points by `point_id` ascending (numeric when possible, else string), iterate and place labels; for each candidate compute a rectangle `[x, y, x+labelW, y+labelH]` in SVG units, compare against already-placed rectangles, skip if any overlap. Suppresses text but keeps points visible. Deterministic (lowest point_id wins every time).
 - **SVG text at deep zoom is a Safari trap.** When `font-size` in SVG units corresponds to less than ~0.05 screen pixels, Safari/WebKit stops rendering the glyphs entirely while reporting them present in the DOM. Chrome renders fine. Robust solution: HTML overlay positioned via screen-space math; fragile solution: floor font-size at a minimum SVG-unit value (trades invisible for gigantic).
+- **Supabase silent UPDATE failure under RLS.** When an UPDATE has no matching RLS policy, the client returns `error: null, count: 0`. Looks like success; affects zero rows. Diagnostic pattern: run the UPDATE, re-SELECT to verify the change, then check `pg_policies` for missing UPDATE policy on that role. RLS policy that mirrors an existing SELECT policy (same USING clause + WITH CHECK for row identity preservation) fixes it.
+- **Optimistic list UI + parent refresh = flicker.** When a child component updates DB optimistically from local state, triggering a parent refetch AFTER every change causes visible page re-render / flash. Local state alone is sufficient if the component handles its own persistence. Only refresh parent when the change affects data other siblings depend on.
+- **env() safe-area padding requires `viewport-fit=cover`.** Without this in the viewport meta tag, `env(safe-area-inset-*)` returns 0 on notched iPhones. Easy miss.
+- **Incognito time tracking principle for field users.** Crew chiefs are sensitive about being tracked. Timestamps can exist in the DB for office review but should not be exposed in crew-facing UI. Disguise time capture as useful workflow tools (buttons that do something + happen to log time).
 
 ---
 
@@ -227,6 +287,7 @@ Current PM-facing build targets scheduler/dispatch persona. Licensed PMs who own
 - Frame: what to read first, what to deliver, specific constraints, explicit regression checks, report-when-done structure
 - Report requests: context summary, line counts, ambiguities, build result, manual QA items, confirmation of no-consumer-change
 - Length: detailed, spec-heavy, examples welcome. Claude Code performs better with more context.
+- One prompt = one paste. Embedded code fences are instructions to Claude Code, not separate prompts. Keep the opening and closing fence of the outer prompt as markers.
 
 **Partner-mode (not tutor-mode):**
 - Direct pushback welcomed in both directions
@@ -238,14 +299,52 @@ Current PM-facing build targets scheduler/dispatch persona. Licensed PMs who own
 - Smaller increments when rolling back granularity matters
 - Descriptive commit messages naming the stage and what shipped
 - WIP branches for experimental work, never merge broken to feature branch
-- Push regularly
+- Push regularly (ideally at sub-stage boundaries so work isn't lost)
 - When a commit causes cross-view regressions (view A looks fine, view B breaks), `git revert` the commit cleanly rather than trying to patch-fix. Revert preserves history and keeps the branch shippable.
 
 ---
 
 ## Session Log
 
-### 2026-04-24 — Stage 8.5b-polish complete
+### 2026-04-24 — Stage 9 (crew mobile UI) shipped; push deferred
+
+**Shipped (all pushed to origin at `b2e545c`):**
+- Commit 9.1 (`480d02b`): Mobile crew app shell — CrewApp with header + 3-tab bottom nav, role-based routing fork in App.jsx (party_chief/field_crew → CrewApp, others → CommandCenter), `viewport-fit=cover` added for safe-area support.
+- Commit 9.2 (`a4c919b`): Today's assignments list — real Supabase fetch, AssignmentCard reusable component with status pill + relative date formatting.
+- Commit 9.3 (`ec6da51`): Upcoming tab — same shape as Today with inverted date filter. Extracted shared `useCrewAssignments` hook.
+- Commit 9.4a (`a88a866`): Assignment detail screen with three status-driven modes (sent / in_progress / submitted). Start Work and Submit for QC transitions. ConfirmSubmitModal. Detail-vs-tab rendering in CrewApp via local state.
+- Commit 9.4b (`1ef7783`): Scope checklist + chief field notes. Migration 15 adds `scope_checklist jsonb` + `chief_field_notes text` to `stakeout_assignments`. ScopeChecklist component with optimistic local state. ChiefFieldNotes with 800ms debounced auto-save. Plan view removed from crew detail entirely.
+- Commit 9.4c (`b2e545c`): Polish pass — dropped parent refresh after checklist taps (fixed flicker), removed submit timestamp from submitted-mode copy (incognito time tracking), dropped "reconcile" from crew-facing copy.
+
+**Schema changes:**
+- Migration 15: `stakeout_assignments.scope_checklist jsonb DEFAULT '[]'` + `chief_field_notes text`
+- New RLS policy "Field roles update own assignments" on `stakeout_assignments`: `party_chief` and `field_crew` can UPDATE their own assigned rows (USING + WITH CHECK both enforce `party_chief_id = auth.uid()`). Column-level restriction is Stage 13 work.
+
+**Debugging notes:**
+- Initial Start Work transition silently failed — RLS had SELECT policy for field roles but no UPDATE policy. Silent-zero-row-affected pattern. Fixed by adding the UPDATE policy.
+- Checklist taps caused visible page flicker due to `onChange={() => refresh()}` triggering full assignment refetch on every tap. Removing the parent refresh (child handles its own persistence) fixed it.
+
+**Decided this session:**
+- Crew UX principle: incognito time tracking. DB captures timestamps; UI hides them from chiefs. Added to Key Design Decisions.
+- Plan view removed from crew detail — Trimble Access owns that. Future PDF attachment area replaces it.
+- Stage 9.5 (push notifications) deferred indefinitely. Stage 10 is more valuable for demos and sells.
+- "Reconcile" dropped from crew-facing UX copy; DB enum unchanged.
+- Role-based routing is role-only, no viewport-width check. A party_chief on a desktop browser sees the crew app (works fine via max-width container, future polish).
+
+**Deferred to Stage 10 / Stage 13 / Future:**
+- Project snapshot PNG export on submit (chief's disguised timesheet)
+- PDF attachment area replacing the removed plan view
+- PM-side scope checklist authoring in AssignmentBuilder
+- GPS capture on Start Work tap
+- Column-scoped RLS tightening on `stakeout_assignments` UPDATE
+- Supabase client import pattern unification (direct vs prop-drilled)
+- Desktop max-width container for crew app so party_chief on laptop doesn't see stretched mobile layout
+
+**Next session:** Stage 10 — crew session upload + field-fit workflow + QC compute kickoff. Scope discussion before prompts. Trimble Access CSV export is the primary input format.
+
+---
+
+### 2026-04-24 (earlier) — Stage 8.5b-polish complete
 
 **Shipped (rebuild of Stage 8.5b-polish on clean branch, commits 1–4b):**
 - Commit 1 (`2cd1396`): feature-group filter chips + canvas toolbar scaffold
@@ -266,15 +365,6 @@ All eight commits pushed to origin as of `5418c8f`.
 - Find-point parent toggle pattern: capture `anchorRect` from `e.currentTarget.getBoundingClientRect()` on every click and set visibility true unconditionally. This avoids the "stuck after first click" bug the original WIP had in its parent logic.
 - Point-sizing soft zoom-scale formula: `1 + log2(zoomRatio) * 0.35`, clamped `[1, 2]`. Tested empirically; feels proportional at every zoom without exploding.
 - Label collision: first-render-wins with sorted lowest-point_id-first, AABB overlap in SVG units.
-
-**Deferred:**
-- **Stage 13 item:** SVG labels invisible at extreme zoom (1–2ft viewBox) in Safari. `fontSize` computes to ~0.02px, WebKit refuses sub-pixel text rendering (Chrome more forgiving). Vote for Stage 13 fix: HTML overlay labels positioned over SVG via screen-space math. Affects only extreme zoom; every working zoom level looks clean.
-- **Stage 13 item:** Control points non-selectable (Stage 8.5a decision) blocks adding them to assignments. Needs UX design: toolbar mode toggle, Alt-modifier key, or sidebar "include controls" checkbox. Est. 30–60 min.
-- **Stage 13 item:** Export controls to CSV button. Iterate classified controls, format N/E/Z, trigger download. Belongs in AssignmentBuilder page or project tools, not inside DesignPointsPlanView. Est. 15 min.
-- **Deferred visual polish:** grid styling tiered-line evaluation (tracked in memory; post-commit-4 perception test inconclusive). Re-evaluate during Stage 13 polish.
-- **Deferred product decision:** AssignmentDetail QC view suppresses feature-code colors because `pointStatusMap` → status color precedence wins. Consider dual-channel (fill=status, border=feature) or explicit toggle. Tracked in Phase 2 Feature Requests.
-
-**Open for next session:** Stage 9 — crew field view UI (mobile-first), plus push notifications with iOS 16.4+ caveat.
 
 ---
 
