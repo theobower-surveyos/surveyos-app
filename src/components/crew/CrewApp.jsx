@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import CrewToday from './CrewToday.jsx';
 import CrewUpcoming from './CrewUpcoming.jsx';
 import CrewProfile from './CrewProfile.jsx';
+import CrewAssignmentDetail from './CrewAssignmentDetail.jsx';
 
 // ─── CrewApp ──────────────────────────────────────────────────────────
 // Mobile-first shell for field_crew and party_chief users. Three-tab
@@ -24,17 +25,36 @@ const TABS = [
 
 export default function CrewApp({ user, userProfile, onSignOut }) {
     const [activeTab, setActiveTab] = useState('today');
+    // When non-null, the content area renders CrewAssignmentDetail
+    // instead of the active tab's component. Bottom nav stays visible —
+    // tapping a tab clears the detail AND switches tabs.
+    const [detailAssignmentId, setDetailAssignmentId] = useState(null);
 
     const firstInitial =
         (userProfile?.first_name?.[0] || user?.email?.[0] || '?').toUpperCase();
 
-    // Shared assignment-tap handler — same reference passed to both
-    // Today and Upcoming. Stage 9.4 wires this to assignment detail.
     function handleAssignmentTap(a) {
-        console.log('Tap assignment:', a.id, a.title);
+        setDetailAssignmentId(a.id);
     }
 
-    function renderTab() {
+    function handleBackFromDetail() {
+        setDetailAssignmentId(null);
+    }
+
+    function handleTabChange(tab) {
+        setDetailAssignmentId(null);
+        setActiveTab(tab);
+    }
+
+    function renderContent() {
+        if (detailAssignmentId) {
+            return (
+                <CrewAssignmentDetail
+                    assignmentId={detailAssignmentId}
+                    onBack={handleBackFromDetail}
+                />
+            );
+        }
         if (activeTab === 'upcoming') {
             return (
                 <CrewUpcoming
@@ -101,7 +121,7 @@ export default function CrewApp({ user, userProfile, onSignOut }) {
                 </span>
                 <button
                     type="button"
-                    onClick={() => setActiveTab('profile')}
+                    onClick={() => handleTabChange('profile')}
                     aria-label="Open profile"
                     style={{
                         width: '36px',
@@ -131,7 +151,7 @@ export default function CrewApp({ user, userProfile, onSignOut }) {
                     minHeight: 0,
                 }}
             >
-                {renderTab()}
+                {renderContent()}
             </main>
 
             {/* ── Bottom nav ───────────────────────────────────── */}
@@ -147,12 +167,12 @@ export default function CrewApp({ user, userProfile, onSignOut }) {
                 }}
             >
                 {TABS.map((tab) => {
-                    const isActive = activeTab === tab.key;
+                    const isActive = !detailAssignmentId && activeTab === tab.key;
                     return (
                         <button
                             key={tab.key}
                             type="button"
-                            onClick={() => setActiveTab(tab.key)}
+                            onClick={() => handleTabChange(tab.key)}
                             style={{
                                 flex: 1,
                                 minHeight: '64px',
