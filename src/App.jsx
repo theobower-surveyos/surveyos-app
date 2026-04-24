@@ -19,6 +19,7 @@ import LiveView from './views/LiveView';
 import MobileCrewView from './views/MobileCrewView';
 import Stakeout from './views/Stakeout';
 import WelcomeScreen from './components/WelcomeScreen';
+import CrewApp from './components/crew/CrewApp';
 import { registerServiceWorker } from './crew-pwa/swRegistration';
 
 class ErrorBoundary extends Component {
@@ -338,6 +339,26 @@ export default function App() {
 
   if (!session) return <Auth />;
   if (!profile) return <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-dark)', color: 'var(--text-muted)' }}>Loading SurveyOS...</div>;
+
+  // ─── Crew role routing (Stage 9.1) ───────────────────────────
+  // field_crew and party_chief users go to the mobile-first CrewApp
+  // shell. Routing is purely role-based — desktop viewport still
+  // gets the crew app for these roles (field-first users, their
+  // workflow is mobile regardless of the screen they're on). Placed
+  // BEFORE the Welcome and MorningBrief gates so crew members never
+  // see those screens — they're office-only rituals.
+  const CREW_ROLES = ['field_crew', 'party_chief'];
+  if (CREW_ROLES.includes((profile.role || '').toLowerCase().trim())) {
+    return (
+      <ErrorBoundary>
+        <CrewApp
+          user={session.user}
+          userProfile={profile}
+          onSignOut={() => supabase.auth.signOut()}
+        />
+      </ErrorBoundary>
+    );
+  }
 
   // Welcome screen — temporary, gated to Lukas only. Shows every login.
   // Flow: Welcome → Morning Brief → Command Center. Remove by deleting this block.
