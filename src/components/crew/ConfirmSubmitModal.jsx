@@ -41,7 +41,7 @@ export default function ConfirmSubmitModal({ open, onCancel, onConfirm, submitti
                     Submit for QC?
                 </h3>
                 <p style={{ margin: '0 0 20px', color: 'var(--text-muted)', fontSize: '14px', lineHeight: 1.5 }}>
-                    This marks your work complete and notifies the PM to review. You won't be able to undo this from the field — the PM will handle any corrections on their end.
+                    This marks your work complete and sends it to the PM. You can't undo this from the field — the PM will handle any corrections.
                 </p>
                 <button
                     type="button"

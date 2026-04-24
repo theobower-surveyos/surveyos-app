@@ -162,7 +162,6 @@ export default function CrewAssignmentDetail({ assignmentId, onBack }) {
                             <ScopeChecklist
                                 assignmentId={assignment.id}
                                 items={assignment.scope_checklist || []}
-                                onChange={() => refresh()}
                             />
                         </Section>
                     </>
@@ -174,7 +173,6 @@ export default function CrewAssignmentDetail({ assignmentId, onBack }) {
                             <ScopeChecklist
                                 assignmentId={assignment.id}
                                 items={assignment.scope_checklist || []}
-                                onChange={() => refresh()}
                             />
                         </Section>
 
@@ -197,11 +195,7 @@ export default function CrewAssignmentDetail({ assignmentId, onBack }) {
                     <>
                         <Section title="Status">
                             <div style={{ fontSize: '14px', color: 'var(--text-muted)' }}>
-                                Work submitted on{' '}
-                                {assignment.submitted_at
-                                    ? new Date(assignment.submitted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-                                    : 'recently'}
-                                . The PM will review your work and reconcile.
+                                Your work has been submitted. The PM will take it from here.
                             </div>
                         </Section>
 
@@ -210,7 +204,6 @@ export default function CrewAssignmentDetail({ assignmentId, onBack }) {
                                 <ScopeChecklist
                                     assignmentId={assignment.id}
                                     items={assignment.scope_checklist}
-                                    onChange={() => refresh()}
                                 />
                             </Section>
                         )}
