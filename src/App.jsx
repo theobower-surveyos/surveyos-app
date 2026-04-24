@@ -20,6 +20,7 @@ import MobileCrewView from './views/MobileCrewView';
 import Stakeout from './views/Stakeout';
 import WelcomeScreen from './components/WelcomeScreen';
 import CrewApp from './components/crew/CrewApp';
+import SosParserTester from './components/dev/SosParserTester';
 import { registerServiceWorker } from './crew-pwa/swRegistration';
 
 class ErrorBoundary extends Component {
@@ -478,6 +479,7 @@ export default function App() {
               {navBtn('/equipment', 'equipment', '🧰 Equipment')}
               {navBtn('/roster', 'roster', '👥 Team Roster')}
               {navBtn('/client-portal', 'client-portal', '🤝 Client Portal')}
+              {import.meta.env.DEV && navBtn('/dev/sos-parser', 'dev-sos', 'SOS Parser Tester')}
             </div>
             <div style={{ flex: 1 }}></div>
             <div style={{ padding: '15px', backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: '8px', marginBottom: '20px' }}>
@@ -540,6 +542,9 @@ export default function App() {
                 ? <Stakeout supabase={supabase} profile={profile} projects={projects} />
                 : <Navigate to="/dispatch" replace />
             } />
+            {import.meta.env.DEV && (
+              <Route path="/dev/sos-parser" element={<SosParserTester />} />
+            )}
             <Route path="*" element={<div style={{ color: 'var(--text-muted)', padding: '40px', textAlign: 'center' }}><h2>404 — Route Not Found</h2><button onClick={() => navigate('/')} style={{ marginTop: '16px', padding: '10px 24px', backgroundColor: 'var(--brand-teal)', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}>Back to Command Center</button></div>} />
           </Routes>
         </div>
