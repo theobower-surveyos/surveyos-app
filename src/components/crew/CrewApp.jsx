@@ -28,9 +28,21 @@ export default function CrewApp({ user, userProfile, onSignOut }) {
     const firstInitial =
         (userProfile?.first_name?.[0] || user?.email?.[0] || '?').toUpperCase();
 
+    // Shared assignment-tap handler — same reference passed to both
+    // Today and Upcoming. Stage 9.4 wires this to assignment detail.
+    function handleAssignmentTap(a) {
+        console.log('Tap assignment:', a.id, a.title);
+    }
+
     function renderTab() {
         if (activeTab === 'upcoming') {
-            return <CrewUpcoming user={user} userProfile={userProfile} />;
+            return (
+                <CrewUpcoming
+                    user={user}
+                    userProfile={userProfile}
+                    onAssignmentTap={handleAssignmentTap}
+                />
+            );
         }
         if (activeTab === 'profile') {
             return (
@@ -45,10 +57,7 @@ export default function CrewApp({ user, userProfile, onSignOut }) {
             <CrewToday
                 user={user}
                 userProfile={userProfile}
-                onAssignmentTap={(a) => {
-                    // Stage 9.4 wires this to assignment detail navigation.
-                    console.log('Tap assignment:', a.id, a.title);
-                }}
+                onAssignmentTap={handleAssignmentTap}
             />
         );
     }
