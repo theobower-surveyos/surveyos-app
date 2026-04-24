@@ -41,7 +41,16 @@ export default function CrewApp({ user, userProfile, onSignOut }) {
                 />
             );
         }
-        return <CrewToday user={user} userProfile={userProfile} />;
+        return (
+            <CrewToday
+                user={user}
+                userProfile={userProfile}
+                onAssignmentTap={(a) => {
+                    // Stage 9.4 wires this to assignment detail navigation.
+                    console.log('Tap assignment:', a.id, a.title);
+                }}
+            />
+        );
     }
 
     return (
