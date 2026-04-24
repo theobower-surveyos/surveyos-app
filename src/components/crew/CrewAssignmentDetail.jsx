@@ -2,18 +2,23 @@ import React, { useState } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { supabase } from '../../supabaseClient';
 import { useCrewAssignmentDetail } from '../../hooks/useCrewAssignmentDetail';
-import DesignPointsPlanView from '../DesignPointsPlanView.jsx';
 import ConfirmSubmitModal from './ConfirmSubmitModal.jsx';
+import ScopeChecklist from './ScopeChecklist.jsx';
+import ChiefFieldNotes from './ChiefFieldNotes.jsx';
 
 // ─── CrewAssignmentDetail ─────────────────────────────────────────────
 // Three render modes driven by assignment.status:
-//   sent        → pre-work info (notes, client contact), "Start work" CTA
-//   in_progress → tolerances, "Submit for QC" CTA (confirmation gated)
-//   submitted   → read-only summary, no CTA
+//   sent        → pre-work info (notes, client contact, scope
+//                 checklist), "Start work" CTA
+//   in_progress → scope checklist, tolerances, PM notes textarea,
+//                 "Submit for QC" CTA (confirmation gated)
+//   submitted   → status summary, final checklist state, read-back of
+//                 chief's notes, no CTA
 //
-// Plan view renders the existing desktop-styled DesignPointsPlanView
-// inline — mobile-crew optimized mode lands in 9.4b along with the
-// scope checklist and point-tap bottom sheet.
+// The plan view was intentionally removed in 9.4b — chiefs navigate
+// with Trimble Access on the data collector, so the SurveyOS plan
+// view added noise without field value. A PDF-attachment area will
+// replace it in a later stage.
 
 const STATUS_LABELS = {
     draft: 'Draft',
@@ -30,7 +35,7 @@ function formatDate(dateStr) {
 }
 
 export default function CrewAssignmentDetail({ assignmentId, onBack }) {
-    const { assignment, designPoints, error, loading, refresh } =
+    const { assignment, error, loading, refresh } =
         useCrewAssignmentDetail({ assignmentId });
     const [actionError, setActionError] = useState(null);
     const [submitting, setSubmitting] = useState(false);
@@ -153,46 +158,79 @@ export default function CrewAssignmentDetail({ assignmentId, onBack }) {
                                 )}
                             </Section>
                         )}
-                        <Section title="Point count">
-                            <div style={{ fontSize: '14px' }}>
-                                {designPoints?.length ?? 0} points to stake
-                            </div>
+                        <Section title="Scope checklist">
+                            <ScopeChecklist
+                                assignmentId={assignment.id}
+                                items={assignment.scope_checklist || []}
+                                onChange={() => refresh()}
+                            />
                         </Section>
                     </>
                 )}
 
                 {status === 'in_progress' && (
-                    <Section title="Tolerances">
-                        <div style={{ fontSize: '14px', fontFamily: "'JetBrains Mono', monospace" }}>
-                            H: {assignment.default_tolerance_h ?? '—'} ft · V: {assignment.default_tolerance_v ?? '—'} ft
-                        </div>
-                    </Section>
+                    <>
+                        <Section title="Scope checklist">
+                            <ScopeChecklist
+                                assignmentId={assignment.id}
+                                items={assignment.scope_checklist || []}
+                                onChange={() => refresh()}
+                            />
+                        </Section>
+
+                        <Section title="Tolerances">
+                            <div style={{ fontSize: '14px', fontFamily: "'JetBrains Mono', monospace" }}>
+                                H: {assignment.default_tolerance_h ?? '—'} ft · V: {assignment.default_tolerance_v ?? '—'} ft
+                            </div>
+                        </Section>
+
+                        <Section title="Notes for the PM">
+                            <ChiefFieldNotes
+                                assignmentId={assignment.id}
+                                initialValue={assignment.chief_field_notes}
+                            />
+                        </Section>
+                    </>
                 )}
 
                 {status === 'submitted' && (
-                    <Section title="Status">
-                        <div style={{ fontSize: '14px', color: 'var(--text-muted)' }}>
-                            Work submitted on{' '}
-                            {assignment.submitted_at
-                                ? new Date(assignment.submitted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-                                : 'recently'}
-                            . The PM will review your work and reconcile.
-                        </div>
-                    </Section>
-                )}
+                    <>
+                        <Section title="Status">
+                            <div style={{ fontSize: '14px', color: 'var(--text-muted)' }}>
+                                Work submitted on{' '}
+                                {assignment.submitted_at
+                                    ? new Date(assignment.submitted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+                                    : 'recently'}
+                                . The PM will review your work and reconcile.
+                            </div>
+                        </Section>
 
-                {designPoints && designPoints.length > 0 && (
-                    <Section title="Plan view">
-                        <div style={{ height: '360px', border: '1px solid var(--border-subtle)', borderRadius: '8px', overflow: 'hidden' }}>
-                            <DesignPointsPlanView
-                                designPoints={designPoints}
-                                selectedIds={new Set()}
-                                onSelectionChange={() => {}}
-                                hoveredId={null}
-                                onHoverChange={() => {}}
-                            />
-                        </div>
-                    </Section>
+                        {assignment.scope_checklist && assignment.scope_checklist.length > 0 && (
+                            <Section title="Scope checklist">
+                                <ScopeChecklist
+                                    assignmentId={assignment.id}
+                                    items={assignment.scope_checklist}
+                                    onChange={() => refresh()}
+                                />
+                            </Section>
+                        )}
+
+                        {assignment.chief_field_notes && (
+                            <Section title="Your notes">
+                                <div style={{
+                                    whiteSpace: 'pre-wrap',
+                                    fontSize: '14px',
+                                    lineHeight: 1.5,
+                                    padding: '12px 14px',
+                                    background: 'var(--bg-surface)',
+                                    border: '1px solid var(--border-subtle)',
+                                    borderRadius: '10px',
+                                }}>
+                                    {assignment.chief_field_notes}
+                                </div>
+                            </Section>
+                        )}
+                    </>
                 )}
             </div>
 

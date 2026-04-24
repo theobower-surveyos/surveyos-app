@@ -2,14 +2,17 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
 
 // ─── useCrewAssignmentDetail ──────────────────────────────────────────
-// Fetches a single stakeout_assignment with its project and (via the
-// assignment_points join) its design points flattened into the shape
-// DesignPointsPlanView expects. Exposes refresh() so the detail screen
-// can refetch after a status transition without re-mounting.
+// Fetches a single stakeout_assignment with its project. Exposes
+// refresh() so the detail screen can refetch after a status transition
+// or checklist update without re-mounting.
+//
+// Stage 9.4b: dropped the design-points fetch. Chiefs navigate with
+// Trimble Access on the data collector — the SurveyOS plan view added
+// noise without field value. A PDF attachment area will replace it in
+// a future stage.
 
 export function useCrewAssignmentDetail({ assignmentId }) {
     const [assignment, setAssignment] = useState(null);
-    const [designPoints, setDesignPoints] = useState(null);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(true);
 
@@ -18,7 +21,7 @@ export function useCrewAssignmentDetail({ assignmentId }) {
         setLoading(true);
         setError(null);
 
-        const { data: aData, error: aError } = await supabase
+        const { data, error: qError } = await supabase
             .from('stakeout_assignments')
             .select(`
                 id, title, assignment_date, status, notes,
@@ -26,6 +29,7 @@ export function useCrewAssignmentDetail({ assignmentId }) {
                 sent_at, submitted_at, reconciled_at,
                 client_contact_name, client_contact_phone,
                 client_contact_role, client_contact_notes,
+                scope_checklist, chief_field_notes,
                 project:projects (
                     id, project_name, location, client_name
                 )
@@ -33,36 +37,12 @@ export function useCrewAssignmentDetail({ assignmentId }) {
             .eq('id', assignmentId)
             .maybeSingle();
 
-        if (aError) {
-            setError(aError.message);
+        if (qError) {
+            setError(qError.message);
             setLoading(false);
             return;
         }
-        setAssignment(aData);
-
-        const { data: pData, error: pError } = await supabase
-            .from('stakeout_assignment_points')
-            .select(`
-                sort_order,
-                override_tolerance_h,
-                override_tolerance_v,
-                design_point:stakeout_design_points (
-                    id, point_id, feature_code,
-                    northing, easting, elevation
-                )
-            `)
-            .eq('assignment_id', assignmentId)
-            .order('sort_order');
-
-        if (pError) {
-            setError(pError.message);
-            setLoading(false);
-            return;
-        }
-        const flattened = (pData || [])
-            .map((ap) => ap.design_point)
-            .filter(Boolean);
-        setDesignPoints(flattened);
+        setAssignment(data);
         setLoading(false);
     }, [assignmentId]);
 
@@ -70,5 +50,5 @@ export function useCrewAssignmentDetail({ assignmentId }) {
         load();
     }, [load]);
 
-    return { assignment, designPoints, error, loading, refresh: load };
+    return { assignment, error, loading, refresh: load };
 }
