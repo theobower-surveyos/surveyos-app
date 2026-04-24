@@ -108,6 +108,22 @@ SOS v1 is the only format supported natively.
 
 To check that your codes parse cleanly before uploading to SurveyOS, use the SOS Parser Tester (available in dev mode) or the code validation on the crew app upload screen (coming in Stage 10.3).
 
+## QC compute behavior
+
+Once an as-staked file is uploaded, SurveyOS resolves each code against the assignment's design context and writes a row into `stakeout_qc_points`. Here's what happens per shot type.
+
+- **Point stake.** Look up the design point by ID. Perpendicular-agnostic: actual offset = distance from observation to design coordinates. `offset_variance = actual − declared` (signed, so over/under-shoot is visible). `delta_h = |offset_variance|`. Compared against the effective tolerance (chain below). Elevation delta uses `|obs_Z − design_Z|`. Missing design point → shot_type `unmatched_bonus`, status `unmatched`.
+- **Line stake.** Look up both endpoints A and B. Project the observation onto segment A→B; perpendicular distance becomes the actual offset, compared against the declared offset in the code. Elevation is interpolated along the segment when both endpoints carry one. If the projection falls off the ends of the segment (t<0 or t>1), QC is still computed but a note is written flagging it for review. Missing either endpoint → `unmatched_bonus`.
+- **Check shot (`<id>-CHK`).** Direct coordinate compare against the referenced point. Pass/fail classified as `check_pass` / `check_fail`. Falls back to project-wide controls if the ID isn't in the assignment; if still missing, `unmatched_check`.
+- **Control check (`CP-CHK`).** Spatial nearest-neighbour match among project controls and prior observations within 2ft. Exactly one match → `check_pass` / `check_fail`. Zero or more than one → `unmatched_check` with a note listing candidates.
+- **Parse error.** The raw code and observed coordinates are preserved; all QC fields null; `shot_type` and `h_status` set to `parse_error`.
+
+**Tolerance fallback chain** (horizontal and vertical, same order): per-point override on the assignment → assignment default → library default (0.060 ft horizontal, 0.030 ft vertical).
+
+**Duplicate handling.** Within a single upload, if two observations share the same design reference, the most recent one wins (by `observed_at`, or insertion order when absent). Earlier duplicates are dropped before matching and reported in the upload summary.
+
+**Re-upload semantics.** Uploading a new as-staked file for an assignment deletes the prior run and its `stakeout_qc_points` rows, then writes the fresh run. There is no version history today — edit the CSV and re-upload if something needs to change.
+
 ## Versioning
 
 This document is version 1.0. Future versions will be announced with a migration period; older versions remain readable. The enum of stake types may grow (adding entries is non-breaking), but the four structural forms are stable.

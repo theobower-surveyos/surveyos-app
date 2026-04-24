@@ -1316,11 +1316,11 @@ function PointList({
                                     <span
                                         className="pl-status-chip"
                                         style={{
-                                            color: POINT_STATUS_COLOR[status],
+                                            color: POINT_STATUS_COLOR[status] || 'var(--text-muted)',
                                             backgroundColor: 'rgba(255,255,255,0.04)',
                                         }}
                                     >
-                                        {POINT_STATUS_LABEL[status]}
+                                        {POINT_STATUS_LABEL[status] || status}
                                     </span>
                                 </div>
                                 <div className="coordinate-data" style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
