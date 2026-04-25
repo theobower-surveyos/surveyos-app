@@ -6,7 +6,7 @@ import ConfirmSubmitModal from './ConfirmSubmitModal.jsx';
 import ScopeChecklist from './ScopeChecklist.jsx';
 import ChiefFieldNotes from './ChiefFieldNotes.jsx';
 import CrewUploadButton from './CrewUploadButton.jsx';
-import CrewQcScoreboard, { effectiveStatus, isStakeShot } from './CrewQcScoreboard.jsx';
+import CrewQcScoreboard, { isStakeShot } from './CrewQcScoreboard.jsx';
 import { useCrewQcRun } from '../../hooks/useCrewQcRun';
 
 // ─── CrewAssignmentDetail ─────────────────────────────────────────────
@@ -55,7 +55,7 @@ export default function CrewAssignmentDetail({ assignmentId, onBack }) {
     const hasQcResults = !!qcRun && Array.isArray(qcPoints) && qcPoints.length > 0;
     const outOfTolCount = (qcPoints || []).reduce((acc, p) => {
         if (!isStakeShot(p)) return acc;
-        return effectiveStatus(p) === 'out_of_tol' ? acc + 1 : acc;
+        return p.h_status === 'out_of_tol' ? acc + 1 : acc;
     }, 0);
 
     async function handleStart() {

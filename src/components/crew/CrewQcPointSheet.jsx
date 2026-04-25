@@ -1,12 +1,7 @@
 import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { supabase } from '../../supabaseClient';
-import {
-    FIELD_FIT_CODES,
-    extractFieldFitCode,
-    extractFieldFitNote,
-    effectiveStatus,
-} from './CrewQcScoreboard.jsx';
+import { REASON_LABELS } from './CrewQcScoreboard.jsx';
 
 // ─── CrewQcPointSheet ─────────────────────────────────────────────────
 // Bottom sheet that slides up from the bottom of the viewport. Renders
@@ -15,12 +10,12 @@ import {
 //   • field_fit    → reason summary + "Remove field-fit flag"
 //   • everything else → no action button (read-only)
 //
-// Migration 12's column-protection trigger forbids field roles from
-// touching h_status. To represent a field-fit we therefore mutate
-// only field_fit_reason (use the legacy 'other' catch-all that passes
-// the existing CHECK) and field_fit_note (free-form, where we store a
-// "[OB] note" prefix that the scoreboard parses for display).
-// Removing a flag clears both fields back to NULL.
+// Migration 17 (Stage 10.4.5) lets chiefs write h_status='field_fit'
+// directly and accepts the SOS reason codes (OB/AC/SA/CF/OT) in
+// field_fit_reason, so the prefix-encoded workaround from Stage 10.4
+// is no longer needed. Removing a flag re-derives h_status from the
+// underlying delta_h vs. effective_tolerance_h so the row reverts to
+// either 'in_tol' or 'out_of_tol' as the math demands.
 
 const STATUS_LABELS = {
     in_tol: 'In tolerance',
@@ -50,10 +45,12 @@ const STATUS_COLORS = {
 
 const REASON_ORDER = ['OB', 'AC', 'SA', 'CF', 'OT'];
 
+const SOS_REASON_SET = new Set(['OB', 'AC', 'SA', 'CF', 'OT']);
+
 export default function CrewQcPointSheet({ point, onClose, onUpdated }) {
-    const eff = effectiveStatus(point);
-    const existingCode = extractFieldFitCode(point.field_fit_note);
-    const existingNote = extractFieldFitNote(point.field_fit_note);
+    const eff = point.h_status || 'pending';
+    const existingCode = SOS_REASON_SET.has(point.field_fit_reason) ? point.field_fit_reason : null;
+    const existingNote = point.field_fit_note || '';
 
     const [view, setView] = useState('detail'); // detail | reason | other_text
     const [otherText, setOtherText] = useState(existingCode === 'OT' ? existingNote : '');
@@ -63,12 +60,12 @@ export default function CrewQcPointSheet({ point, onClose, onUpdated }) {
     async function applyFieldFit(code, note) {
         setBusy(true);
         setError(null);
-        const fieldFitNote = note ? `[${code}] ${note}` : `[${code}]`;
         const { error: updErr } = await supabase
             .from('stakeout_qc_points')
             .update({
-                field_fit_reason: 'other',
-                field_fit_note: fieldFitNote,
+                h_status: 'field_fit',
+                field_fit_reason: code,
+                field_fit_note: note ? note : null,
             })
             .eq('id', point.id);
         setBusy(false);
@@ -82,9 +79,15 @@ export default function CrewQcPointSheet({ point, onClose, onUpdated }) {
     async function clearFieldFit() {
         setBusy(true);
         setError(null);
+        const dh = Number(point.delta_h);
+        const tolH = Number(point.effective_tolerance_h);
+        const reverted = (Number.isFinite(dh) && Number.isFinite(tolH) && Math.abs(dh) <= tolH)
+            ? 'in_tol'
+            : 'out_of_tol';
         const { error: updErr } = await supabase
             .from('stakeout_qc_points')
             .update({
+                h_status: reverted,
                 field_fit_reason: null,
                 field_fit_note: null,
             })
@@ -295,7 +298,7 @@ function DetailView({ point, existingCode, existingNote }) {
             {existingCode && (
                 <Field label="Field-fit reason">
                     <span style={{ color: 'var(--brand-amber)', fontWeight: 600 }}>
-                        {existingCode} — {FIELD_FIT_CODES[existingCode] || 'Other'}
+                        {existingCode} — {REASON_LABELS[existingCode] || 'Other'}
                     </span>
                     {existingNote && (
                         <div style={{ marginTop: '4px', color: 'var(--text-muted)', fontSize: '13px', whiteSpace: 'pre-wrap' }}>
@@ -375,7 +378,7 @@ function ReasonView({ onPick, onCancel }) {
                     style={reasonButtonStyle}
                 >
                     <strong style={{ color: 'var(--brand-amber)', marginRight: '10px' }}>{code}</strong>
-                    {FIELD_FIT_CODES[code]}
+                    {REASON_LABELS[code]}
                 </button>
             ))}
             <button
@@ -479,7 +482,7 @@ function Footer({ eff, existingCode, existingNote, busy, onMarkClick, onRemove }
                         <>
                             {' as '}
                             <strong style={{ color: 'var(--brand-amber)' }}>
-                                {existingCode} — {FIELD_FIT_CODES[existingCode] || 'Other'}
+                                {existingCode} — {REASON_LABELS[existingCode] || 'Other'}
                             </strong>
                         </>
                     )}

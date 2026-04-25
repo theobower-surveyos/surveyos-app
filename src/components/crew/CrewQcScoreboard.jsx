@@ -8,44 +8,30 @@ import CrewQcPointSheet from './CrewQcPointSheet.jsx';
 //   3. Per-point list (sorted: out-of-tol first, then field-fit, etc.)
 //   4. Tap-row → CrewQcPointSheet (bottom sheet with detail + flag UI)
 //
-// Field-fit overlay
-// ─────────────────
-// Migration 12 ships an UPDATE trigger that forbids field roles from
-// touching h_status. Stage 10.4 cannot reclassify a row's h_status,
-// only mutate the field_fit_reason / field_fit_note columns the
-// trigger allows. To represent "this out-of-tol shot was a justified
-// field-fit", we encode the new SOS reason code (OB/AC/SA/CF/OT) as
-// a "[CODE] note" prefix in field_fit_note, then derive an effective
-// status in the UI.
+// Field-fit semantics
+// ───────────────────
+// Migration 17 (Stage 10.4.5) lets chief role write h_status='field_fit'
+// directly on rows they own and accepts SOS reason codes (OB/AC/SA/CF/OT)
+// in field_fit_reason. The Stage 10.4 prefix-encoded workaround is gone;
+// the scoreboard reads h_status straight from the DB.
 //
-// effectiveStatus(p) returns 'field_fit' whenever a recognised reason
-// prefix is present; otherwise it returns the underlying h_status.
+// REASON_LABELS maps SOS codes (and the legacy values still permitted by
+// migration 17's CHECK) to display strings used by the bottom sheet.
 
-export const FIELD_FIT_CODES = {
+export const REASON_LABELS = {
     OB: 'Obstruction',
     AC: 'Access issue',
     SA: 'Safety',
     CF: 'Conflict (existing infrastructure)',
     OT: 'Other',
+    // Legacy reasons preserved by migration 17 for any rows that
+    // existed before Stage 10.4.5.
+    adjacent_line: 'Adjacent line',
+    utility_conflict: 'Utility conflict',
+    design_math_error: 'Design math error',
+    grade_adjustment: 'Grade adjustment',
+    other: 'Other',
 };
-
-export function extractFieldFitCode(note) {
-    if (!note || typeof note !== 'string') return null;
-    const m = note.match(/^\[(OB|AC|SA|CF|OT)\]/);
-    return m ? m[1] : null;
-}
-
-export function extractFieldFitNote(note) {
-    if (!note || typeof note !== 'string') return '';
-    const m = note.match(/^\[[A-Z]{2}\]\s*(.*)$/s);
-    return m ? m[1].trim() : '';
-}
-
-export function effectiveStatus(point) {
-    if (!point) return 'pending';
-    if (extractFieldFitCode(point.field_fit_note)) return 'field_fit';
-    return point.h_status || 'pending';
-}
 
 export function isStakeShot(point) {
     return point && (point.shot_type === 'point_stake' || point.shot_type === 'line_stake');
@@ -110,7 +96,7 @@ export default function CrewQcScoreboard({ points, onPointUpdate }) {
         };
         for (const p of points || []) {
             if (isStakeShot(p)) c.stakes += 1;
-            const eff = effectiveStatus(p);
+            const eff = p.h_status || 'pending';
             if (eff in c) c[eff] += 1;
         }
         return c;
@@ -121,8 +107,8 @@ export default function CrewQcScoreboard({ points, onPointUpdate }) {
     const sortedPoints = useMemo(() => {
         const list = [...(points || [])];
         list.sort((a, b) => {
-            const ai = SORT_ORDER.indexOf(effectiveStatus(a));
-            const bi = SORT_ORDER.indexOf(effectiveStatus(b));
+            const ai = SORT_ORDER.indexOf(a.h_status || 'pending');
+            const bi = SORT_ORDER.indexOf(b.h_status || 'pending');
             if (ai !== bi) return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
             return String(a.observed_point_id || '').localeCompare(String(b.observed_point_id || ''));
         });
@@ -132,7 +118,7 @@ export default function CrewQcScoreboard({ points, onPointUpdate }) {
     const visiblePoints = useMemo(() => {
         if (!filter) return sortedPoints;
         return sortedPoints.filter((p) => {
-            const eff = effectiveStatus(p);
+            const eff = p.h_status || 'pending';
             if (filter === 'check') return eff === 'check_pass' || eff === 'check_fail';
             if (filter === 'unmatched') return eff === 'unmatched' || eff === 'unmatched_check';
             return eff === filter;
@@ -317,7 +303,7 @@ function chipDisplayFor(key, counts) {
 // ── Per-point row ─────────────────────────────────────────────────────
 
 function PointRow({ point, onClick }) {
-    const eff = effectiveStatus(point);
+    const eff = point.h_status || 'pending';
     const accent = (eff === 'out_of_tol' || eff === 'check_fail')
         ? STATUS_COLORS.out_of_tol
         : eff === 'field_fit'
