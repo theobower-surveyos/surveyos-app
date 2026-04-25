@@ -440,6 +440,8 @@ export default function App() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {mobileNavBtn('/', 'command_center', '📊 Command Center')}
             {mobileNavBtn('/dispatch', 'dispatch', '🗓️ Dispatch Board')}
+            {['owner', 'admin', 'pm'].includes((profile?.role || '').toLowerCase().trim()) &&
+              mobileNavBtn('/stakeout', 'stakeout', '🎯 Stakeout QC')}
             {mobileNavBtn('/live-view', 'live_view', '📡 Live Field View', !!selectedProject)}
             {mobileNavBtn('/network-ops', 'network-ops', '🌐 Network Ops')}
             {mobileNavBtn('/equipment', 'equipment', '🧰 Equipment')}
@@ -474,6 +476,8 @@ export default function App() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {navBtn('/', 'command_center', '📊 Command Center')}
               {navBtn('/dispatch', 'dispatch', '🗓️ Dispatch Board')}
+              {['owner', 'admin', 'pm'].includes((profile?.role || '').toLowerCase().trim()) &&
+                navBtn('/stakeout', 'stakeout', '🎯 Stakeout QC')}
               {navBtn('/live-view', 'live_view', '📡 Live Field View', !!selectedProject)}
               {navBtn('/network-ops', 'network-ops', '🌐 Network Ops')}
               {navBtn('/equipment', 'equipment', '🧰 Equipment')}
