@@ -11,7 +11,7 @@ import { supabase } from '../../supabaseClient';
 // onComplete. Status text on the button covers the four phases:
 // idle → reading → processing → done (then "Re-check" for re-uploads).
 
-export default function CrewUploadButton({ assignment, onComplete }) {
+export default function CrewUploadButton({ assignment, onComplete, label }) {
     const fileInputRef = useRef(null);
     const [status, setStatus] = useState('idle'); // idle | reading | processing | done | error
     const [error, setError] = useState(null);
@@ -86,10 +86,10 @@ export default function CrewUploadButton({ assignment, onComplete }) {
                 }}
             >
                 <Upload size={20} />
-                {status === 'idle' && 'Check my work'}
+                {status === 'idle' && (label || 'Check my work')}
                 {status === 'reading' && 'Reading file…'}
                 {status === 'processing' && 'Processing observations…'}
-                {status === 'done' && 'Re-check'}
+                {status === 'done' && (label || 'Re-check')}
                 {status === 'error' && 'Try again'}
             </button>
             <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '8px', textAlign: 'center' }}>

@@ -6,7 +6,8 @@ import ConfirmSubmitModal from './ConfirmSubmitModal.jsx';
 import ScopeChecklist from './ScopeChecklist.jsx';
 import ChiefFieldNotes from './ChiefFieldNotes.jsx';
 import CrewUploadButton from './CrewUploadButton.jsx';
-import CrewQcSummaryStub from './CrewQcSummaryStub.jsx';
+import CrewQcScoreboard, { effectiveStatus, isStakeShot } from './CrewQcScoreboard.jsx';
+import { useCrewQcRun } from '../../hooks/useCrewQcRun';
 
 // ─── CrewAssignmentDetail ─────────────────────────────────────────────
 // Three render modes driven by assignment.status:
@@ -43,10 +44,19 @@ export default function CrewAssignmentDetail({ assignmentId, onBack }) {
     const [submitting, setSubmitting] = useState(false);
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [starting, setStarting] = useState(false);
-    // Upload summary is in-memory only — Stage 10.4 will read from
-    // stakeout_qc_points so a chief returning to the screen still sees
-    // their last results.
-    const [lastUploadSummary, setLastUploadSummary] = useState(null);
+
+    // Latest QC run + observation rows. Persisted, not in-memory — a
+    // chief leaving and returning to this screen still sees their
+    // last upload result. refreshQc() runs after every upload and
+    // every field-fit toggle.
+    const { run: qcRun, points: qcPoints, refresh: refreshQc } =
+        useCrewQcRun({ assignmentId });
+
+    const hasQcResults = !!qcRun && Array.isArray(qcPoints) && qcPoints.length > 0;
+    const outOfTolCount = (qcPoints || []).reduce((acc, p) => {
+        if (!isStakeShot(p)) return acc;
+        return effectiveStatus(p) === 'out_of_tol' ? acc + 1 : acc;
+    }, 0);
 
     async function handleStart() {
         setActionError(null);
@@ -175,9 +185,12 @@ export default function CrewAssignmentDetail({ assignmentId, onBack }) {
 
                 {status === 'in_progress' && (
                     <>
-                        {lastUploadSummary && (
-                            <Section title="QC summary">
-                                <CrewQcSummaryStub summary={lastUploadSummary} />
+                        {hasQcResults && (
+                            <Section title="QC scoreboard">
+                                <CrewQcScoreboard
+                                    points={qcPoints}
+                                    onPointUpdate={refreshQc}
+                                />
                             </Section>
                         )}
 
@@ -201,10 +214,11 @@ export default function CrewAssignmentDetail({ assignmentId, onBack }) {
                             />
                         </Section>
 
-                        <Section title="Check your work">
+                        <Section title={hasQcResults ? 'Re-upload as-staked CSV' : 'Check your work'}>
                             <CrewUploadButton
                                 assignment={assignment}
-                                onComplete={(summary) => setLastUploadSummary(summary)}
+                                onComplete={() => refreshQc()}
+                                label={hasQcResults ? 'Check again' : undefined}
                             />
                         </Section>
                     </>
@@ -266,10 +280,23 @@ export default function CrewAssignmentDetail({ assignmentId, onBack }) {
                     <button
                         type="button"
                         onClick={() => setConfirmOpen(true)}
-                        style={primaryButton('teal', false)}
+                        style={{
+                            ...primaryButton('teal', false),
+                            opacity: outOfTolCount > 0 ? 0.6 : 1,
+                        }}
                     >
                         Submit for QC
                     </button>
+                    {outOfTolCount > 0 && (
+                        <div style={{
+                            marginTop: '8px',
+                            fontSize: '12px',
+                            color: 'var(--brand-amber)',
+                            textAlign: 'center',
+                        }}>
+                            {outOfTolCount} stake{outOfTolCount === 1 ? '' : 's'} out of tolerance — review before submitting.
+                        </div>
+                    )}
                 </ActionFooter>
             )}
 
