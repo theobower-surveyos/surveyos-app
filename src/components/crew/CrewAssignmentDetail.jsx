@@ -5,6 +5,8 @@ import { useCrewAssignmentDetail } from '../../hooks/useCrewAssignmentDetail';
 import ConfirmSubmitModal from './ConfirmSubmitModal.jsx';
 import ScopeChecklist from './ScopeChecklist.jsx';
 import ChiefFieldNotes from './ChiefFieldNotes.jsx';
+import CrewUploadButton from './CrewUploadButton.jsx';
+import CrewQcSummaryStub from './CrewQcSummaryStub.jsx';
 
 // ─── CrewAssignmentDetail ─────────────────────────────────────────────
 // Three render modes driven by assignment.status:
@@ -41,6 +43,10 @@ export default function CrewAssignmentDetail({ assignmentId, onBack }) {
     const [submitting, setSubmitting] = useState(false);
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [starting, setStarting] = useState(false);
+    // Upload summary is in-memory only — Stage 10.4 will read from
+    // stakeout_qc_points so a chief returning to the screen still sees
+    // their last results.
+    const [lastUploadSummary, setLastUploadSummary] = useState(null);
 
     async function handleStart() {
         setActionError(null);
@@ -169,6 +175,12 @@ export default function CrewAssignmentDetail({ assignmentId, onBack }) {
 
                 {status === 'in_progress' && (
                     <>
+                        {lastUploadSummary && (
+                            <Section title="QC summary">
+                                <CrewQcSummaryStub summary={lastUploadSummary} />
+                            </Section>
+                        )}
+
                         <Section title="Scope checklist">
                             <ScopeChecklist
                                 assignmentId={assignment.id}
@@ -186,6 +198,13 @@ export default function CrewAssignmentDetail({ assignmentId, onBack }) {
                             <ChiefFieldNotes
                                 assignmentId={assignment.id}
                                 initialValue={assignment.chief_field_notes}
+                            />
+                        </Section>
+
+                        <Section title="Check your work">
+                            <CrewUploadButton
+                                assignment={assignment}
+                                onComplete={(summary) => setLastUploadSummary(summary)}
                             />
                         </Section>
                     </>

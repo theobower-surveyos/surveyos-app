@@ -3,6 +3,8 @@ import { parseStakeCode } from '../../lib/sosParser.js';
 import { runTests } from '../../lib/sosParser.test.js';
 import { runMatcherTests } from '../../lib/sosMatcher.test.js';
 import { processRun, previewRun } from '../../lib/sosProcessRun.js';
+import { parsePnezdCsv } from '../../lib/csvParser.js';
+import { runCsvParserTests } from '../../lib/csvParser.test.js';
 import { supabase } from '../../supabaseClient';
 
 // ─── SosParserTester ──────────────────────────────────────────────────
@@ -55,6 +57,13 @@ export default function SosParserTester() {
     const [matcherTestSummary, setMatcherTestSummary] = useState(null);
     const [matcherBusy, setMatcherBusy] = useState(false);
     const [matcherError, setMatcherError] = useState(null);
+
+    // ── CSV preview state ──
+    const [csvInput, setCsvInput] = useState(`p1,1000.000,2000.000,50.000,4007-5-HUB
+p2,1005.500,2000.000,50.010,4007-CHK
+p3,1000.000,2050.000,55.000,4003:4002-11-NAIL`);
+    const [csvParsed, setCsvParsed] = useState(null);
+    const [csvTestSummary, setCsvTestSummary] = useState(null);
 
     useEffect(() => {
         if (!SHOW_TESTER) return;
@@ -429,6 +438,127 @@ export default function SosParserTester() {
                                     </thead>
                                     <tbody>
                                         {matcherTestSummary.results.filter((r) => !r.pass).map((r, i) => (
+                                            <tr key={i}>
+                                                <td style={tdStyle}>{r.name}</td>
+                                                <td style={{ ...tdMono, color: 'var(--error)' }}>{r.reason}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </section>
+
+            <section style={sectionStyle}>
+                <h2 style={h2Style}>CSV parser preview</h2>
+                <div style={{ color: 'var(--text-muted)', fontSize: '12.5px', marginBottom: '12px' }}>
+                    Paste PNEZD-format text — five columns per row, no headers. Useful for sanity-checking
+                    a Trimble Access export before uploading via the crew or PM flow.
+                </div>
+                <textarea
+                    value={csvInput}
+                    onChange={(e) => setCsvInput(e.target.value)}
+                    rows={8}
+                    style={textareaStyle}
+                    spellCheck={false}
+                />
+                <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <button
+                        type="button"
+                        onClick={() => setCsvParsed(parsePnezdCsv(csvInput))}
+                        style={buttonStyle('teal')}
+                    >
+                        Parse CSV
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setCsvTestSummary(runCsvParserTests())}
+                        style={buttonStyle('amber')}
+                    >
+                        Run CSV parser test suite
+                    </button>
+                </div>
+
+                {csvParsed && (
+                    <div style={{ marginTop: '16px' }}>
+                        <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                            {csvParsed.rows.length} rows · {csvParsed.errors.length} errors
+                        </div>
+                        {csvParsed.errors.length > 0 && (
+                            <div style={{ overflowX: 'auto', marginBottom: '12px' }}>
+                                <table style={tableStyle}>
+                                    <thead>
+                                        <tr>
+                                            <th style={thStyle}>Line</th>
+                                            <th style={thStyle}>Raw</th>
+                                            <th style={thStyle}>Error</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {csvParsed.errors.map((e, i) => (
+                                            <tr key={i}>
+                                                <td style={tdStyle}>{e.lineNumber}</td>
+                                                <td style={tdMono}>{e.raw}</td>
+                                                <td style={{ ...tdStyle, color: 'var(--error)' }}>{e.message}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                        {csvParsed.rows.length > 0 && (
+                            <div style={{ overflowX: 'auto' }}>
+                                <table style={tableStyle}>
+                                    <thead>
+                                        <tr>
+                                            <th style={thStyle}>Point</th>
+                                            <th style={thStyle}>N</th>
+                                            <th style={thStyle}>E</th>
+                                            <th style={thStyle}>Z</th>
+                                            <th style={thStyle}>Raw code</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {csvParsed.rows.map((r, i) => (
+                                            <tr key={i}>
+                                                <td style={tdMono}>{r.observed_point_id}</td>
+                                                <td style={tdMono}>{r.N}</td>
+                                                <td style={tdMono}>{r.E}</td>
+                                                <td style={tdMono}>{r.Z == null ? '—' : r.Z}</td>
+                                                <td style={tdMono}>{r.rawCode}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {csvTestSummary && (
+                    <div style={{ marginTop: '16px' }}>
+                        <div style={{
+                            fontSize: '16px',
+                            fontWeight: 700,
+                            marginBottom: '12px',
+                            color: csvTestSummary.failed === 0 ? 'var(--success)' : 'var(--error)',
+                        }}>
+                            CSV parser tests: {csvTestSummary.passed}/{csvTestSummary.total} passed
+                            {csvTestSummary.failed > 0 && ` — ${csvTestSummary.failed} failed`}
+                        </div>
+                        {csvTestSummary.failed > 0 && (
+                            <div style={{ overflowX: 'auto' }}>
+                                <table style={tableStyle}>
+                                    <thead>
+                                        <tr>
+                                            <th style={thStyle}>Test</th>
+                                            <th style={thStyle}>Reason</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {csvTestSummary.results.filter((r) => !r.pass).map((r, i) => (
                                             <tr key={i}>
                                                 <td style={tdStyle}>{r.name}</td>
                                                 <td style={{ ...tdMono, color: 'var(--error)' }}>{r.reason}</td>

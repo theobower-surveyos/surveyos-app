@@ -19,6 +19,8 @@ import AssignmentPointsEditor from './AssignmentPointsEditor.jsx';
 import PointTolerancePopover from './PointTolerancePopover.jsx';
 import AssignmentProgressBar from './AssignmentProgressBar.jsx';
 import ReconciliationModal from './ReconciliationModal.jsx';
+import PmUploadButton from './pm/PmUploadButton.jsx';
+import PmUploadDropZone from './pm/PmUploadDropZone.jsx';
 import { exportAsCSV, exportAsXLSX } from '../utils/stakeoutExports.js';
 
 function isExportable(status) {
@@ -662,14 +664,26 @@ export default function AssignmentDetail({
                 </div>
             ) : (
                 <>
-                    {isAssignmentEditable(assignment.status) && (
-                        <div
-                            style={{
-                                display: 'flex',
-                                justifyContent: 'flex-end',
-                                marginBottom: '8px',
-                            }}
-                        >
+                    <div
+                        style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            gap: '12px',
+                            marginBottom: '8px',
+                            flexWrap: 'wrap',
+                        }}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                            <PmUploadButton
+                                assignmentId={assignment.id}
+                                onComplete={() => reload()}
+                            />
+                            <span style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>
+                                Upload as-staked CSV (PNEZD format) to compute QC results.
+                            </span>
+                        </div>
+                        {isAssignmentEditable(assignment.status) && (
                             <button
                                 type="button"
                                 onClick={() => setEditingPoints(true)}
@@ -678,7 +692,14 @@ export default function AssignmentDetail({
                             >
                                 <Pencil size={12} /> Edit points
                             </button>
-                        </div>
+                        )}
+                    </div>
+
+                    {!hasQc && (
+                        <PmUploadDropZone
+                            assignmentId={assignment.id}
+                            onComplete={() => reload()}
+                        />
                     )}
 
                     <div style={{ position: 'relative', marginBottom: '12px' }}>
