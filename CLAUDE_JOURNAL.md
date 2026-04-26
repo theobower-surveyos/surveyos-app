@@ -28,7 +28,7 @@ Vertical SaaS — the operating system for small land surveying firms. Five role
 - **Dispatch Board** — crew assignment
 - **MorningBrief** — daily dispatch document
 - **TodaysWork** — active task view
-- **Stakeout QC** — Phase 1 focus; Stage 10 is the defining capability
+- **Stakeout QC** — Phase 1 focus; Stage 10 is functionally complete as of 2026-04-25
 - **Client Portal** — deliverables + invoices + payment
 - **Fee Schedule Engine** — proposal generation
 - **SurveyNet** — monument database (Phase 1.5/2 priority with GDACS integration)
@@ -38,7 +38,7 @@ Vertical SaaS — the operating system for small land surveying firms. Five role
 
 **Wedge for sales:** invoicing + client portal + core PM. The AR-acceleration story (50-day DSO reduction) is the headline value prop for initial design-partner conversations.
 
-**Stage 10 significance:** Stakeout QC moves from feature to category-definer here. No current product in the industry (Trimble Access, Leica Captivate, TBC, Carlson) provides the specific workflow SurveyOS is building: offset-aware QC compute that gives the chief a green-light / red-flag scoreboard before leaving site, with cumulative per-chief accuracy intelligence feeding later crew-to-project AI matching. Building blocks exist in fragments across vendors; the complete loop does not. As of 2026-04-24, SOS parser (10.1) and matching engine (10.2) are shipping — the engine is functionally complete, validated end-to-end against real assignment data.
+**Stakeout QC is the category-defining capability.** No current product (Trimble Access, Leica Captivate, TBC, Carlson) provides the offset-aware end-to-end loop SurveyOS now ships: chief uploads as-staked CSV → SOS-grammar parser extracts design refs and offsets → matcher computes expected-vs-actual deltas with offset transformation → chief sees in-tolerance/out-of-tolerance scoreboard before leaving site → optional field-fit flagging with reason codes → submission to PM dashboard. Stage 10.1 through 10.4.5 shipped this loop.
 
 ---
 
@@ -55,94 +55,86 @@ Vertical SaaS — the operating system for small land surveying firms. Five role
 - Staking CV
 - Predictive Analytics
 - Compliance Engine
-- (Additional packs TBD)
-
-**Active pricing work:** entry-tier $399 identified as friction point for smallest firms. Stakeout QC positioned as premium feature of top tier. Pricing is active strategy work — expect iteration as design-partner conversations produce feedback.
 
 ---
 
 ## Architectural Constraints (Non-Negotiable)
-
-These are canonical. Do not deviate without explicit discussion:
 
 - **Stack:** React + Vite + Supabase + Vercel. React 18. Multi-tenant by `firm_id`.
 - **Repo path:** `/Users/theobower/_WORK/02_SurveyOS/code/surveyos-app`
 - **Styling:** Dark-mode-first. Inline styles referencing CSS variables. No Tailwind, no CSS-in-JS libraries.
 - **Brand teal:** `#0D4F4F` (primary), `#0F6E56` (highlight).
 - **Topographic contour motifs** — subtle visual signature, use sparingly.
-- **CSS vars live in `src/index.css`:** `--brand-teal`, `--brand-teal-light`, `--brand-amber`, `--bg-dark`, `--bg-surface`, `--border-subtle`, `--text-main`, `--text-muted`, `--success`, `--error`. Utility classes: `.coordinate-data` (mono N/E/Z), `.btn-field` (52px glove-mode buttons).
-- **Previously single `App.jsx`** — now decomposing into components as scale requires, but maintain tight integration patterns.
-- **Zero-consumer-change integration pattern:** when extending shared components (e.g., DesignPointsPlanView), prefer internal state over lifting props so consumers don't need changes. Proven in Stages 8.5a/b.
-- **Layout concerns belong at the consumer-page level, NOT inside shared components.** Padding, margins, gutters, and breathing room cascade unpredictably when added to a shared component. Proven by commit 2c revert on 2026-04-23.
-- **Feature flag dev-only tools:** `import.meta.env.DEV` gates (e.g., AssignmentTestDataSeeder, SosParserTester).
+- **CSS vars in `src/index.css`:** `--brand-teal`, `--brand-teal-light`, `--brand-amber`, `--bg-dark`, `--bg-surface`, `--border-subtle`, `--text-main`, `--text-muted`, `--success`, `--error`. Utility classes: `.coordinate-data` (mono N/E/Z), `.btn-field` (52px glove-mode buttons).
+- **Zero-consumer-change integration pattern** when extending shared components.
+- **Layout concerns at consumer-page level only**, never in shared components.
+- **Feature flag dev-only tools** with `import.meta.env.DEV` triple-layer gates (route + nav link + component render).
 - **Migrations in `supabase/migrations/`** — numbered, versioned, descriptive names.
-- **Role-based routing in App.jsx:** `user_profiles.role IN ('field_crew', 'party_chief')` routes to `CrewApp`; all other authenticated roles route to desktop CommandCenter. Pure role-based, no viewport-width check.
-- **SurveyOS owns its input formats.** Don't accommodate messy industry conventions — define the canonical SurveyOS standard (e.g., SOS grammar), document it, demo it, integrate per-firm custom parsers in Phase 2 if required. Inspired by Apple's opinionated-defaults approach to redefining industry UX.
+- **Role-based routing in App.jsx:** `field_crew`/`party_chief` → CrewApp, all other authenticated → CommandCenter. No viewport-width check.
+- **SurveyOS owns its input formats.** SOS grammar is canonical; firms adopt or pay for custom parser. Apple-style opinionated default.
 
 ---
 
-## Phase 1 Roadmap: Stakeout QC (13 stages)
+## Phase 1 Roadmap: Stakeout QC
 
 **Feature branch:** `feature/stakeout-qc`
 
 | Stage | Description | Status |
 |-------|-------------|--------|
 | 1-5 | Schema, utility functions, export utilities, PM-facing design points import | ✅ Shipped |
-| 6 | PM assignment builder with plan view, lasso select, save/send | ✅ Shipped (`dd8db0b`) |
+| 6 | PM assignment builder | ✅ Shipped (`dd8db0b`) |
 | 7a | List + detail + QC dashboard | ✅ Shipped (`91f88a0`) |
 | 7b.1 | Inline edit metadata, edit points, per-point tolerance | ✅ Shipped (`9966470`) |
 | 7b.2 | Reconciliation workflow, exports, status progression, re-send | ✅ Shipped (`73da530`) |
-| 8 | Crew PWA infrastructure (service worker, IndexedDB, sync manager) | ✅ Shipped (`3d7b794`) |
-| 8.5a | Plan view production-scale (pan/zoom, control detection, intelligent default zoom) | ✅ Shipped (`9438d45`) |
-| 8.5b-core | Feature-code color palette, shape differentiation, control triangle 2x, labels | ✅ Shipped (`9cb8dfc`) |
-| 8.5b-polish | Filter chips, legend, zoom-to-point, label collision, zoom-responsive sizing | ✅ Shipped (`5418c8f`) |
+| 8 | Crew PWA infrastructure | ✅ Shipped (`3d7b794`) |
+| 8.5a | Plan view production-scale | ✅ Shipped (`9438d45`) |
+| 8.5b-core | Feature-code color palette, shape differentiation | ✅ Shipped (`9cb8dfc`) |
+| 8.5b-polish | Filter chips, legend, zoom-to-point, label collision | ✅ Shipped (`5418c8f`) |
 | 9 (minus 9.5 push) | Crew field view UI (mobile-first) | ✅ Shipped (`b2e545c`) |
-| 9.5 | Push notifications (iOS 16.4+ caveat) | ⏸ Deferred indefinitely |
-| 10.1 | SOS grammar spec + parser module + dev tester | ✅ Shipped (`2b5a276`) |
-| 10.2 | Matching engine + migration 16 + matcher playground | ✅ Shipped (`3be2b37`) |
-| **10.3** | **CSV upload UI — chief mobile primary + PM desktop fallback** | **⏳ Next** |
-| 10.4 | Chief-facing QC scoreboard | ⏳ Pending |
-| 10.5 | PM manual-match + field-fit reconciliation | ⏳ Pending (likely merge to Stage 12) |
-| 11 | Accuracy narratives (Supabase edge function + pg_cron, Claude-generated summaries) | ⏳ Pending |
+| 9.5 | Push notifications | ⏸ Deferred indefinitely |
+| 10.1 | SOS grammar spec + parser + dev tester | ✅ Shipped (`2b5a276`) |
+| 10.2 | Matching engine + migration 16 | ✅ Shipped (`3be2b37`) |
+| 10.3 | CSV upload UI (chief mobile + PM desktop) | ✅ Shipped (`ca2d61a`) |
+| 10.3.5 | Stakeout QC sidebar nav | ✅ Shipped (`b1152bd`) |
+| 10.4 | Chief QC scoreboard + field-fit UX | ✅ Shipped (`6746151`) |
+| 10.4.5 | Migration 17 + clean field-fit schema | ✅ Shipped (`52de61f`) |
+| 10.5 | PM manual-match | ⏸ Deferred — likely fold into Stage 12 |
+| **11** | **Accuracy narratives (Edge function + pg_cron + Claude summaries)** | **⏳ Next** |
 | 12 | Integration (CommandCenter tile, nav wiring, MorningBrief, client portal) | ⏳ Pending |
-| 13 | Testing + polish (refactor, CASCADE fix, seeder fix, file-size refactor, off-view indicator, stacked points UX, Safari deep-zoom label fix, control-point selectability, export controls CSV, grid tiering, snapshot export, RLS tightening, Vitest wrapper) | ⏳ Pending |
+| 13 | Testing + polish backlog | ⏳ Pending |
 
-**Progress:** Stages 1-9 + 10.1 + 10.2 shipped. Stage 10 in progress (10.3 next, 10.4 after).
+**Progress:** Stages 1-10.4.5 shipped. Phase 1 substantially complete. Stage 11 (accuracy narratives) and Stage 12 (integration) remain before MVP. Stage 13 is polish.
 
 ---
 
-## Current State (as of 2026-04-24, end of late-evening session)
+## Current State (as of 2026-04-25, end of late-evening session)
 
 **Git:**
-- Feature branch: `feature/stakeout-qc`
-- Latest remote push: `b2e545c` (Stage 9.4c) — earlier in this same date session
-- Local unpushed: `2b5a276` (Stage 10.1) + `3be2b37` (Stage 10.2) + journal update (this commit)
-- Working tree: clean after journal commit
+- Feature branch: `feature/stakeout-qc` at `52de61f`
+- All Stage 10 commits pushed to origin including 10.4 and 10.4.5
+- Working tree: clean (after journal commit lands)
 
 **Environment:**
 - Vite: `http://localhost:5174` (port 5173 in use)
 - Claude Code CLI: active
 - Primary test browser: Safari (desktop + responsive mode for mobile testing)
-- Dev tools: SOS Parser Tester at `/dev/sos-parser`, dev-only
+- Dev tools accessible in sidebar: SOS Parser Tester at `/dev/sos-parser` (gated to dev mode)
 
 **Test data state:**
-- 513-point "8.5A_TESTING" project still the main Stakeout QC test dataset
-- `8.5_TESTING` assignment (`ca2a12c2-6aa0-41ae-840b-8e17ed1e0af4`) attached to `theo@surveyos.com` as `party_chief` — currently has 7 qc_points rows from 10.2 testing (1 in_tol, 2 out_of_tol, 1 check_pass, 1 unmatched_check, 1 parse_error, 1 unmatched_bonus). Run id: `ec6da744-736f-490f-aa44-c9dbebf4c0b9`
-- Migration 15 applied: `stakeout_assignments.scope_checklist jsonb + chief_field_notes text`
-- Migration 16 applied: `stakeout_qc_points.shot_type text + design_point_id_b uuid` + dropped legacy CHECK constraints (single-letter stake_type, N/S/E/W direction values)
-- RLS policy "Field roles update own assignments" on `stakeout_assignments`. Stage 13 item: tighten via trigger/RPC
+- 513-point "8.5A_TESTING" project
+- `8.5_TESTING` assignment (`ca2a12c2-...`) attached to `theo@surveyos.com` as `party_chief`
+- After 10.4.5 testing: `stakeout_qc_runs` has 1 row, `stakeout_qc_points` has 6 rows for `obs1-obs6`
+- Migrations applied: 15 (scope checklist + chief_field_notes), 16 (shot_type + design_point_id_b on qc_points + dropped legacy CHECKs), 17 (extended field_fit_reason CHECK + chief h_status transitions)
 
-**Next action:** Stage 10.3 — CSV upload UI. Chief mobile is the primary path (Trimble Access on data collector → SurveyOS upload → matcher runs → scoreboard). PM desktop is the fallback path (PM uploads on AssignmentDetail when chief defers). Scope discussion in progress as of session end.
+**Next action:** Stage 11 — accuracy narratives. Supabase Edge Function + pg_cron job that aggregates QC data on a schedule and generates Claude-written natural-language summaries (e.g., "Crew completed 47 of 50 stakes in tolerance on the Verrado curb job; 2 field-fit deviations flagged for utility conflicts; 1 stake out of tolerance on point 4007 with a 0.087 ft horizontal delta"). These narratives feed the IntelligenceDrawer and MorningBrief.
 
 ---
 
-## Stage 10 Overview — Stakeout QC Compute
+## Stage 10 Architecture (Complete)
 
-Stage 10 is the defining capability of the SurveyOS Stakeout QC pillar. The chief's "can I leave site?" moment. The PM's "was this work done right?" moment. The demo moment that sells firms.
+### SurveyOS Stake Code Standard (SOS) v1
 
-### SurveyOS Stake Code Standard (SOS) v1 — locked
-
-Industry's existing as-staked code formats (`4003 - 4002 - 11FT LUP`, free-text descriptions) are parser-hostile and inconsistent. Per decision 2026-04-24: SurveyOS defines its own canonical grammar. Firms adopt SOS for SurveyOS compatibility; legacy formats become per-firm custom parsers in Phase 2.
+Industry's existing as-staked code formats are parser-hostile. SurveyOS publishes its own canonical grammar; firms adopt for SurveyOS compatibility; legacy formats become per-firm Phase 2 custom parsers.
 
 Grammar:
 <code> := <point_stake> | <line_stake> | <check_shot> | <control_check>
@@ -151,215 +143,221 @@ Grammar:
 <check_shot>     := <design_id> "-" "CHK"                             e.g. 4007-CHK
 <control_check>  := "CP" "-" "CHK"                                    e.g. CP-CHK
 
-Stake types (Phase 1 canonical): `HUB, LATHE, NAIL, PK, MAG, PAINT, CP, WHISKER`. Additional industry codes (CHIS, XMARK, FLAG, IP) deferred pending firm demand.
+Stake types: `HUB, LATHE, NAIL, PK, MAG, PAINT, CP, WHISKER`.
+Field-fit reason codes: `OB` (Obstruction), `AC` (Access), `SA` (Safety), `CF` (Conflict), `OT` (Other).
 
-Field-fit deviations are flagged in the SurveyOS crew app POST-upload (chief taps an out-of-tol point, marks as field-fit with reason code: OB=obstruction, AC=access, SA=safety, CF=conflict, OT=other). NOT captured in the code string itself — removes field-typing complexity.
+Spec: `docs/sos-stake-code-standard.md`.
 
-Spec: `docs/sos-stake-code-standard.md`
+### Files shipped in Stage 10
 
-### Stage 10 sub-commits
+**Modules (pure logic):**
+- `src/lib/sosParser.js` — parses SOS code strings to typed shape (10.1)
+- `src/lib/sosParser.test.js` — 46 tests (10.1)
+- `src/lib/sosMatcher.js` — `matchStake(parsed, observed, context)` returns row-ready qc_points object (10.2)
+- `src/lib/sosMatcher.test.js` — 28 tests (10.2)
+- `src/lib/sosProcessRun.js` — batch processor: dedup, create run, delete prior, write batch (10.2)
+- `src/lib/csvParser.js` — PNEZD parser, 13 tests (10.3)
 
-- **10.1 (`2b5a276`):** SOS grammar doc + parser module + 46-test suite + dev tester at `/dev/sos-parser`
-- **10.2 (`3be2b37`):** Matching engine + migration 16 + processRun batch processor + matcher playground (extension of dev tester). Validated end-to-end against real assignment data on 2026-04-24.
-- **10.3 (next):** CSV upload UI — chief mobile (primary path, Trimble Access export → phone → SurveyOS) + PM desktop (fallback on AssignmentDetail)
-- **10.4:** Chief-facing QC scoreboard — the killer UX moment; big numbers, green/yellow/red, "you can leave site" or "go fix point 4007"
-- **10.5:** PM manual-match + field-fit reconciliation UI (desktop)
+**Migrations:**
+- `16_qc_points_shot_type_and_line_endpoint.sql` — added shot_type + design_point_id_b; dropped legacy CHECKs on actual_offset_direction (was N/S/E/W) and parsed/declared_stake_type (was single-letter codes); extended h_status/v_status CHECKs
+- `17_field_fit_chief_writes_and_sos_codes.sql` — extended field_fit_reason CHECK to include SOS codes (OB/AC/SA/CF/OT) plus legacy values; modified `enforce_qc_point_column_protection_fn` trigger function to allow chief role to transition h_status between out_of_tol ↔ field_fit on own assigned rows; backfilled prefix-encoded data to clean column writes
 
-### Stage 10.2 architecture (shipped)
+**Components:**
+- `src/components/crew/CrewUploadButton.jsx` — chief upload affordance with iOS file picker integration (10.3)
+- `src/components/crew/CrewQcScoreboard.jsx` — headline + counts row + per-point list (10.4 + 10.4.5)
+- `src/components/crew/CrewQcPointSheet.jsx` — bottom sheet with detail + field-fit reason picker (10.4 + 10.4.5)
+- `src/components/pm/PmUploadButton.jsx` — desktop top button (10.3)
+- `src/components/pm/PmUploadDropZone.jsx` — drag-and-drop zone for empty state (10.3)
+- `src/hooks/useCrewQcRun.js` — DB-backed latest-run + points fetch with refresh (10.4)
 
-Files:
-- `src/lib/sosMatcher.js` — pure-logic matcher; `matchStake(parsed, observed, assignmentContext)` returns row-ready object for stakeout_qc_points
-- `src/lib/sosMatcher.test.js` — 28 hand-rolled tests, browser-runnable from dev tester
-- `src/lib/sosProcessRun.js` — batch processor; deduplicates by design_ref (most recent wins), creates run row, deletes prior qc_points/qc_runs, writes new batch
-- `supabase/migrations/16_qc_points_shot_type_and_line_endpoint.sql` — added shot_type + design_point_id_b columns; dropped legacy CHECK constraints on actual_offset_direction (was N/S/E/W only) and parsed/declared_stake_type (was single-letter codes)
-- `src/components/AssignmentDetail.jsx` — 2-line graceful fallback added so unknown new status values (`check_pass`, `unmatched_check`, etc.) don't crash the QC view
+**Existing components modified:**
+- `src/components/crew/CrewAssignmentDetail.jsx` — integrates scoreboard + adaptive Submit button visual weight
+- `src/components/AssignmentDetail.jsx` — added PmUploadButton + PmUploadDropZone in the QC section
+- `src/components/AssignmentsList.jsx` — unchanged
+- `src/App.jsx` — added Stakeout QC sidebar nav link, role-gated to office roles (10.3.5)
+- `src/components/dev/SosParserTester.jsx` — extended with matcher playground (10.2) + CSV parser preview (10.3)
 
-Algorithms:
-- **Point stake:** actual_offset = √(ΔN² + ΔE²) from design point coords; delta_h = |actual_offset − declared_offset|; delta_v = obs_Z − design_Z (no offset on Z)
-- **Line stake:** project obs onto line A→B; t parametric position; perpendicular distance is actual_offset; design_Z = lerp(A.z, B.z, t); off-segment t triggers field_fit_note but still computes QC. Side-agnostic per product call.
-- **Check shot:** direct coord comparison against design point. delta_h = √(ΔN² + ΔE²). Pass/fail vs same tolerance as stakeout. Falls back to project_controls if not in assignment design points.
-- **Control check (CP-CHK):** spatial match within 2ft radius across project_controls + prior_observations. Unique match → check_pass/check_fail; zero or multiple → unmatched_check.
-- **Tolerance fallback chain:** per-point override → assignment default → library default (0.060 H / 0.030 V)
-- **Bearings stored as decimal degrees as string** (e.g., "45.2") for point/check shots; literal "perpendicular" for line stakes.
+### Data flow end-to-end
 
-### Stage 10.2 validation results (2026-04-24)
+1. PM creates assignment with design points (existing Stage 6+)
+2. PM sends to chief, status `sent` → `in_progress` (Stage 9.4a)
+3. Chief stakes work in field, exports CSV from Trimble Access (industry workflow)
+4. Chief opens crew app on Trimble data collector or phone, in-progress assignment, taps "Check my work"
+5. iOS file picker → CSV file selected → CSV parsed by `csvParser.parsePnezdCsv()`
+6. Each row's description fed to `sosParser.parseStakeCode()`
+7. `sosProcessRun.processRun()` dedups by design_ref (most recent wins), fetches assignment context, calls `sosMatcher.matchStake()` per row
+8. Matcher returns shape ready for stakeout_qc_points; processRun deletes prior run row (cascades to qc_points), creates new run, batch-inserts qc_points
+9. Crew app fetches via `useCrewQcRun()` hook
+10. CrewQcScoreboard renders headline + counts + per-point list
+11. Out-of-tolerance rows show with red accent bar; tap → bottom sheet with detail + Mark as field-fit
+12. Chief picks reason code → DB update writes h_status='field_fit', field_fit_reason=<code>, field_fit_note=<optional text>
+13. Counts row + headline update; Submit button visual weight reflects out_of_tol count
+14. Chief taps Submit → status `in_progress` → `submitted` (existing Stage 9.4a flow)
+15. PM sees populated qc_dashboard on AssignmentDetail (existing Stage 7 UI consumes 10.2's data)
 
-End-to-end matcher run against 8.5_TESTING with 7 fabricated observations:
-shot_type        h_status         v_status      count
-check_shot       check_pass       check_pass    1
-line_stake       out_of_tol       out_of_tol    1
-parse_error      parse_error      null          1
-point_stake      in_tol           in_tol        1
-point_stake     out_of_tol        in_tol        1
-unmatched_bonus  unmatched        null          1
-unmatched_check  unmatched_check  null          1
+### Key product decisions (locked across Stage 10)
 
-All classifications correct against expected output. Re-upload regression: total stays at 7, prior run deleted, new run row created cleanly. Parser tests still 46/46. Matcher tests 28/28.
+- **Dash separator + colon for line-stake "between."** Chief types ~10 chars per code.
+- **No direction hint in codes.** Distance-only QC for point features. Line features derive perpendicular from design geometry.
+- **Side-agnostic line-stake matching.** Perpendicular distance only. Side concerns become PM manual-flag if a project requires it.
+- **Most-recent-wins duplicate handling.** Earlier observations dropped pre-match.
+- **Re-upload overwrites.** Each new run deletes prior `stakeout_qc_runs` row, cascades to qc_points.
+- **Parse-error rows written to qc_points** with raw description preserved.
+- **Field-fit flagged in crew app post-upload, NOT in code string.** Chief taps row → reason picker → DB update.
+- **Per-chief accuracy intelligence is the most defensible IP angle.** Predictive crew-to-project matching pipeline. Phase 2+. Possible provisional patent when algorithm crystallizes.
+- **Adaptive Submit button visual weight.** All-in-tol → full teal; any out-of-tol → 60% opacity + caveat line. Chief can still submit with reds; we just make them think.
+- **Chief sees scoreboard on assignment detail mount, persisted from DB.** Not in-memory only.
+- **Trimble data collectors are primary device target.** TSC5 Android, iPhone+DA2 iOS, TSC7 Windows. Same UX as phone.
 
-### Key product decisions (locked)
+### Stage 10.4.5 schema constraint resolution
 
-- **Dash separator for SOS codes.** Matches industry familiarity. Colon for the "between A and B" line-stake relationship (removes dash-counting ambiguity).
-- **No direction hint in codes.** Chiefs don't reliably type direction; MVP does distance-only QC for point features. Line features derive direction from design geometry (perpendicular to line). Phase 2 may add direction inference/confirmation UX.
-- **Side-agnostic line-stake matching.** Perpendicular distance only. If side matters for a project, PM flags manually.
-- **Most-recent-wins duplicate handling.** Same design_ref staked twice → earlier dropped pre-match.
-- **Parse-error rows written to qc_points** with raw description preserved. Surface counts at upload time so user sees parse failures immediately.
-- **Re-upload overwrites.** Each new run deletes prior `stakeout_qc_runs` row (cascades to qc_points). Simple mental model. Stage 13 may add versioning.
-- **Incognito time tracking principle applies throughout Stage 10.** Upload timestamp captured in DB; scoreboard never shows "you finished at 4:47pm."
-- **Per-chief accuracy profile (future, Phase 2+).** Stage 10 writes deltas to `stakeout_qc_points`; over time, aggregation across assignments produces per-chief accuracy intelligence feeding AI crew-to-project matching. Most defensible IP angle — no competitor aggregates field QC into a dispatch decision layer.
+Two existing constraints initially blocked the field-fit UX in 10.4:
+1. Trigger `enforce_qc_point_column_protection_fn` (migration 12) raised exception when non-office roles wrote `h_status`
+2. CHECK on `field_fit_reason` allowed only legacy values (`adjacent_line`, `utility_conflict`, etc.)
 
-### Trimble tolerance report — not the input format
-
-Reviewed Trimble's HTM tolerance report. Produces raw point-to-point coordinate deltas with no offset awareness; flags nearly every row red when offset staking is in use. Confirms the industry gap. SurveyOS ingests raw as-staked PNEZD CSVs and does offset-aware compute itself.
+10.4 worked around with prefix-encoded notes (`field_fit_note='[OB]'`, `field_fit_reason='other'`). 10.4.5 fixed properly: extended CHECK to include SOS codes, modified trigger function additively to allow chief h_status transitions out_of_tol ↔ field_fit on own assigned rows, backfilled existing prefix data. Schema now reflects reality cleanly.
 
 ---
 
 ## Deferred Stages
 
-### Stage 9.5 — Push notifications (iOS 16.4+)
+### Stage 9.5 — Push notifications
+Deferred indefinitely. Build push when we know what real events to notify about.
 
-Deferred indefinitely. Better to build push once we know what real events exist to notify about (e.g., "PM reconciled your work"). Stage 8 service worker scaffold preserved for future use. Slot whenever a focused weekend appears or a design partner asks.
+### Stage 10.5 — PM manual-match + field-fit reconciliation UI
+Deferred to Stage 12 likely. Field-fit is now chief-side flagged; PM gets that data automatically. Manual-match for unresolved observations could ship as a Stage 12 PM dashboard polish.
 
 ---
 
 ## Feature Code Palette (Canonical, Phase 1)
 
-~45 canonical codes in industry-aligned families. Lives in `src/components/planview/featureCodeStyles.js`.
+~45 canonical codes in industry-aligned families. Lives in `src/components/planview/featureCodeStyles.js`. Status precedence: SELECTED > STATUS > FEATURE_CODE > default teal.
 
-- **Control** (classified separately via `pointClassification.js`, renders as white triangle at 2x): CP, BM, TBM, SECCOR, CM, MON, REBAR, BRASS, BCC, SM, CORNER, SECTION, QUARTER, PLSS, SCS, PROP, WIT
-- **Water** (deep blue `#2563EB`): WL circle, WV square, FH plus, WM octagon
-- **Storm** (teal `#14B8A6`): SD circle, SDMH circle 1.5x, SDI square, SCB square 1.3x
-- **Sanitary** (green `#16A34A`): SS, SSMH 1.5x, SCO
-- **Gas** (yellow `#EAB308`): GL, GV, GM
-- **Electric** (red `#DC2626`): EL, ET, EV
-- **Telecom** (purple `#9333EA`): TPED (pedestal), TL, FO
-- **Lighting** (amber): LP plus, SP square
-- **Curb**: TBC white circle (primary staking), EP/EW light gray, CL bright orange (project spine), BC/CR medium gray, WC magenta square
-- **Grading**: FG tan, RG brown, SG dark brown
-- **Trees**: CTR dark forest green (coniferous), DTR medium green (deciduous), TR light green (generic)
-- **Structures**: BLD, COL dark gray
-- **Unknown fallback**: neutral gray `#6B7280`
-
-**Status precedence in rendering:** SELECTED (amber) > STATUS (in_tol/out_of_tol/etc) > FEATURE_CODE > default teal.
+(Full palette unchanged; see prior journal for full listing if needed.)
 
 ---
 
 ## Key Design Decisions (Locked)
 
 - **Tolerance defaults:** horizontal 0.060 ft, vertical 0.030 ft (firm-level configurable)
-- **Feature-code grammar (design side):** `FEATURE-OFFSET-STAKETYPE` (e.g., `TBC-5FT-HUB`) — the PM's design intent notation
-- **As-staked code grammar (field side):** SOS v1 (see Stage 10 section) — what chiefs type after the dash
-- **PM sets WHAT to stake; chief decides HOW in field** — division of authority
-- **Vertical QC (`v_status`) populated for offset shots** — Stage 10.2 computes it; previous Phase 1 plan was to defer, but the matcher computes both delta_z and v_status across all shot types where elevation is available
-- **Vocabulary (DB-level):** status enum: draft → sent → in_progress → submitted → reconciled
-- **Vocabulary (crew-UX-level):** "reconcile" language dropped in crew-facing copy
+- **Feature-code grammar (design side):** `FEATURE-OFFSET-STAKETYPE` (PM intent)
+- **As-staked code grammar (field side):** SOS v1 (chief input)
+- **PM sets WHAT to stake; chief decides HOW in field**
+- **Vertical QC populated** for offset shots in Stage 10.2 onward
+- **Status enum at DB:** draft → sent → in_progress → submitted → reconciled
+- **UX vocabulary:** "reconcile" dropped in crew-facing copy
 - **Pricing positioning:** Stakeout QC is premium feature of top tier
-- **Layout concerns at consumer-page level only**, never in shared components
-- **Crew UX principle: incognito time tracking.** Applies across all crew-facing UI including upload/scoreboard
-- **Crew detail plan view removed.** Chiefs use Trimble Access for field navigation
+- **Layout concerns at consumer-page level only**
+- **Crew UX principle: incognito time tracking.** DB captures timestamps; UI hides them
+- **Crew detail plan view removed** — Trimble Access owns field navigation
 - **Role-based routing (not viewport-based)**
-- **SurveyOS defines its own input formats** — SOS grammar, future per-firm custom parsers as paid implementation
+- **SurveyOS defines its own input formats** — SOS grammar, future per-firm custom parsers as paid implementations
+- **Adaptive Submit button visual weight** based on out_of_tol count
+- **Chief field-fit flagging is post-upload, in app** — never in code string
 
 ---
 
-## Intellectual Property Strategy (as of 2026-04-24)
+## Intellectual Property Strategy
 
-Reviewed during Stage 10 scoping discussion.
-
-**Not patentable:** comparing design coordinates to observed coordinates (Trimble prior art); computing tolerance deltas (prior art); CSV upload to cloud (obvious); mobile scoreboard UI (obvious once written).
-
-**Potentially narrow-claim patentable:**
-- Parsing `FEATURE-OFFSET-STAKETYPE` code grammar to back out expected offset from observed coordinates and compute corrected delta
-- Inferring feature-line direction from adjacent design points to auto-compute expected offset direction without PM input
-- **Per-chief accuracy aggregation → AI crew-to-project dispatch pipeline** (most defensible angle; closed-loop system tying QC data to business action)
-
-**Decision:** do not file patents during Phase 1. Real moat is execution velocity + domain expertise + customer relationships. Keep detailed technical notes (journal is prior-use evidence). If a specific clever algorithm emerges during Stage 10-11 that feels genuinely non-obvious (predictive crew-matching pipeline is the candidate), file a provisional at that point.
+Reviewed during Stage 10 scoping. **Patents not pursued during Phase 1.** Real moat is execution velocity + domain expertise + customer relationships. Most defensible angle is the per-chief-accuracy → AI-crew-dispatch pipeline; consider provisional patent when that algorithm crystallizes in Stage 11+. Journal acts as prior-use evidence.
 
 ---
 
-## PM Persona Gap (Acknowledged, Deferred to Phase 1.5)
+## PM Persona Gap (Phase 1.5)
 
-Current PM-facing build targets scheduler/dispatch persona. Licensed PMs who own client relationships and projects without doing crew scheduling are not yet addressed.
-
-**Solution (Phase 1.5/Phase 2 opener):** Role-scoped dashboards via Option D — add `role` field to `user_profiles` (already exists), role-specific default dashboards, navigation visibility by role, separate role for `firm_owner`/PLS.
+Current PM-facing build targets scheduler/dispatch persona. Licensed PMs who own client relationships need role-scoped dashboards via Option D — `role` field on `user_profiles` (already exists), role-specific default dashboards, navigation visibility by role, separate role for `firm_owner`/PLS.
 
 ---
 
-## Known Bugs (Tracked for Stage 13)
+## Known Bugs / Tech Debt (Tracked for Stage 13)
 
+### Bugs
 - **[BUG]** Stage 7b.1 edit-points removes `stakeout_assignment_points` but CASCADE doesn't reach `stakeout_qc_points`. Stage 13 SQL fix needed.
 - **[BUG]** Stage 7a seeder may create observations for design points not in `assignment_points`.
-- **[TECH DEBT]** `AssignmentDetail.jsx` at 1549 lines. `DesignPointsPlanView.jsx` at ~1500 lines. Refactor candidates: extract `PointList`, `ResendConfirmModal`, `PointGlyph`, `Tooltip`.
-- **[TECH DEBT]** Two Supabase client import patterns coexist (direct vs prop-drilled). Stage 13 to pick one.
-- **[TECH DEBT]** Two `parseStakeCode` functions exist: `src/utils/stakeoutQC.js` for design-side TBC-5FT-HUB grammar, `src/lib/sosParser.js` for as-staked SOS grammar. Different domains, no shadowing risk.
-- **[TECH DEBT]** Hand-rolled test harnesses in `sosParser.test.js` and `sosMatcher.test.js` — Vitest wrapper deferred. Stage 13 cleanup if useful.
-- **[DEFERRED]** Stacked points UX: control point + daily check shots stack at same location.
-- **[DEFERRED]** "Controls off-view" indicator when zoomed away from controls.
-- **[DEFERRED VISUAL]** Grid styling tiered-line evaluation post-commit-4.
-- **[DEFERRED VISUAL]** Labels invisible at extreme zoom (1–2ft viewBox) in Safari. WebKit refuses sub-pixel text rendering.
-- **[DEFERRED UX]** Control points non-selectable. Stage 8.5a decision blocks adding them to assignments.
-- **[DEFERRED FEATURE]** "Export controls to CSV" button.
-- **[DEFERRED FEATURE]** Project snapshot PNG export on chief submit. Doubles as weekly timesheet AND disguised time tracking.
-- **[DEFERRED FEATURE]** PM-side scope checklist authoring in AssignmentBuilder.
-- **[DEFERRED FEATURE]** PDF attachment area on crew assignment detail.
-- **[DEFERRED FEATURE]** GPS tracking of "Start work" tap.
-- **[DEFERRED FEATURE]** Direction inference / confirmation UX for point-feature offsets (Stage 10.2 does distance-only QC for point features).
-- **[DEFERRED SECURITY]** Sandbox RLS policies. Several tables have `Sandbox Master` policies granting `ALL` to `authenticated`. Scope or remove before first paying pilot.
-- **[DEFERRED SECURITY]** Field role UPDATE permission on `stakeout_assignments` is row-level only. Tighten via trigger/RPC.
+
+### Tech debt
+- **[TECH DEBT]** `AssignmentDetail.jsx` at ~1570 lines. `DesignPointsPlanView.jsx` at ~1500 lines. Refactor candidates.
+- **[TECH DEBT]** Two Supabase client import patterns coexist (direct vs prop-drilled).
+- **[TECH DEBT]** Two `parseStakeCode` functions — different domains, no collision but worth unifying.
+- **[TECH DEBT]** Hand-rolled test harnesses (parser, matcher, csv) — Vitest wrapper deferred.
+- **[TECH DEBT]** AssignmentDetail design points table renders all rows (488 in test data). Add pagination ~50/page with prev/next bottom-right. Pre-existing issue surfaced during 10.3 testing.
+
+### Deferred UX/visual polish
+- **[DEFERRED VISUAL]** Crew bottom nav has gap below tab buttons in mobile responsive mode. env(safe-area-inset-bottom) likely over-reserving. Real iPhone may render correctly.
+- **[DEFERRED VISUAL]** Grid styling tiered-line evaluation post-commit-4
+- **[DEFERRED VISUAL]** Labels invisible at extreme zoom in Safari (sub-pixel text)
+- **[DEFERRED UX]** Stacked points UX (control + check shots at same location)
+- **[DEFERRED UX]** "Controls off-view" indicator
+- **[DEFERRED UX]** Control points non-selectable for assignment
+
+### Deferred features
+- **[DEFERRED FEATURE]** "Export controls to CSV" button
+- **[DEFERRED FEATURE]** Project snapshot PNG export on chief submit (timesheet + disguised time log)
+- **[DEFERRED FEATURE]** PM-side scope checklist authoring in AssignmentBuilder
+- **[DEFERRED FEATURE]** PDF attachment area on crew assignment detail
+- **[DEFERRED FEATURE]** GPS tracking of "Start work" tap
+- **[DEFERRED FEATURE]** Direction inference / confirmation UX for point-feature offsets
+
+### Deferred security
+- **[DEFERRED SECURITY]** Sandbox RLS policies — `Sandbox Master` policies grant ALL to `authenticated`. Scope or remove before first paying pilot.
 
 ---
 
-## Phase 2 Feature Requests (Tracked, Not in Current Scope)
+## Phase 2 Feature Requests
 
-- **Firm-level custom feature code libraries.**
-- **Firm-level custom SOS parser** for legacy as-staked conventions (~2 days per firm).
-- **Role-scoped dashboards.**
-- **Feature-code color visibility in QC view.**
-- **Per-chief accuracy intelligence + AI crew-to-project matching.** Most defensible IP angle.
-- **Predictive staking CV.** Intelligence Layer add-on.
-- **Direction inference / confirmation UX for point-feature offsets.**
+- **Firm-level custom feature code libraries**
+- **Firm-level custom SOS parser** for legacy as-staked conventions (~2 days per firm)
+- **Role-scoped dashboards** (PM persona gap)
+- **Feature-code color visibility in QC view**
+- **Per-chief accuracy intelligence + AI crew-to-project matching** — most defensible IP angle
+- **Predictive staking CV** — Intelligence Layer add-on
+- **Direction inference / confirmation UX for point-feature offsets**
 
 ---
 
 ## Key People & Resources
 
-**Drew — CEO of Focus School Software.** SaaS operator with scale experience. Recommends sell-now; Theo committed to finishing Phase 1 MVP loop first. Strategic counterweight for sales/timing tradeoffs.
+**Drew — CEO of Focus School Software.** SaaS operator. Recommends sell-now; Theo committed to Phase 1 MVP first. Strategic counterweight for sales/timing tradeoffs.
 
 ---
 
 ## Lessons Banked (Technical)
 
-- **Wheel zoom + React + Safari:** `onWheel` prop is passive by default — can't preventDefault. Attach via `useEffect` + `addEventListener` with `{ passive: false }`.
-- **Ancestor scroll containers fight for wheel events.** Use `overscroll-behavior: contain` on wrapper.
-- **Overlay UI inside a canvas needs scroll bypass** via `data-canvas-scroll-region` attribute and `closest()` check.
-- **Empty-state early return breaks refs.** Always mount wrapper, conditionally render content inside.
-- **Functional setState calling callbacks during render = infinite loop.** Use imperative setState.
-- **Empty `useEffect` deps + ref-based reads = correct pattern for once-per-mount event listeners.**
-- **React 18 StrictMode mounts twice in dev.** Cleanup handlers matter.
-- **Zero-consumer-change integration pattern.** Lift ZERO state to parents when extending shared components.
-- **Layout concerns don't belong inside shared components.**
-- **Find-point parent toggle pattern.** Re-capture anchorRect on every click, set visibility true unconditionally, separate close path.
-- **Log-scale zoom-responsive sizing** with floor at 1x.
-- **Label AABB collision, first-render-wins** sorted by point_id.
-- **SVG text at deep zoom is a Safari trap.** WebKit refuses sub-pixel text.
-- **Supabase silent UPDATE failure under RLS.** When no UPDATE policy matches, returns error: null, count: 0.
-- **Optimistic list UI + parent refresh = flicker.** Local state alone is sufficient if child handles its own persistence.
-- **env() safe-area padding requires `viewport-fit=cover`.**
-- **Incognito time tracking principle for field users.** Timestamps in DB, hidden from crew UI.
-- **Define the input format, don't accommodate the mess.** Modern dev speed + per-customer parser config beats universal fuzzy parser.
-- **Parser grammar design: single separator + colon for "between."** Dash primary, colon for line-stake relationship.
-- **Dev-mode gating discipline.** Triple-layer gate: route, sidebar link, component render.
-- **Legacy CHECK constraints from earlier stages can block new schema.** Migration 16 dropped legacy CHECKs on `actual_offset_direction` (was N/S/E/W only) and `parsed_stake_type`/`declared_stake_type` (was single-letter codes). When extending column semantics across stages, audit existing CHECK constraints for incompatibility before INSERT/UPDATE.
-- **`stakeout_qc_runs` uses `id` as PK and `submitted_at` as timestamp** — no `created_at` column, no `run_id` column. Schema introspection is faster than guessing.
+- **Wheel zoom + React + Safari:** `onWheel` is passive by default; attach via `useEffect` + `addEventListener` with `{ passive: false }`
+- **Ancestor scroll containers fight for wheel events.** Use `overscroll-behavior: contain`
+- **Overlay UI inside a canvas needs scroll bypass** via `data-canvas-scroll-region` + `closest()`
+- **Empty-state early return breaks refs.** Always mount wrapper, conditionally render content inside
+- **Functional setState calling callbacks during render = infinite loop.** Use imperative setState
+- **Empty `useEffect` deps + ref-based reads = correct pattern for once-per-mount listeners**
+- **React 18 StrictMode mounts twice in dev.** Cleanup handlers matter
+- **Zero-consumer-change integration pattern** when extending shared components
+- **Layout concerns don't belong inside shared components**
+- **Find-point parent toggle pattern** (re-capture anchorRect every click)
+- **Log-scale zoom-responsive sizing** with floor at 1x
+- **Label AABB collision, first-render-wins** sorted by point_id
+- **SVG text at deep zoom is a Safari trap** (sub-pixel text refusal)
+- **Supabase silent UPDATE failure under RLS** (no UPDATE policy → returns null/0 rows)
+- **Optimistic list UI + parent refresh = flicker.** Local state alone if child handles persistence
+- **env() safe-area padding requires `viewport-fit=cover`**
+- **Incognito time tracking principle for field users**
+- **Define the input format, don't accommodate the mess**
+- **Parser grammar design: single separator + colon for "between"**
+- **Dev-mode gating discipline: triple-layer gate**
+- **Legacy CHECK constraints from earlier stages can block new schema.** Migration 16 dropped CHECKs that were incompatible with new column semantics.
+- **Schema introspection beats guessing.** `stakeout_qc_runs` has `id` PK and `submitted_at` timestamp, no `created_at`/`run_id` columns.
+- **Trigger functions can be modified additively via CREATE OR REPLACE FUNCTION.** Migration 17 preserved every existing protection in `enforce_qc_point_column_protection_fn` while adding a permissive case for chief h_status transitions out_of_tol ↔ field_fit on own assigned rows. Same trigger object, swapped function body — no need to drop and recreate the trigger.
+- **Workarounds for schema constraints become tech debt.** When 10.4 hit two existing constraints (column-protection trigger + field_fit_reason CHECK), Claude Code worked around by encoding the SOS code as a `[OB]` prefix in `field_fit_note` and using `field_fit_reason='other'`. Functional but DB no longer reflected reality at the canonical column level. 10.4.5 cleaned up properly with migration 17. Lesson: prefer immediate schema fixes over UI-layer workarounds when the constraint conflicts with new product requirements; the workaround tax compounds.
+- **Supabase SQL Editor runs as service role.** Triggers don't fire for editor queries, so direct UPDATE statements bypass column protections. UI-driven testing is the only definitive trigger validation path.
 
 ---
 
-## AI Dev Workflow (How We Work)
+## AI Dev Workflow
 
 **Multi-tool architecture:** Claude web chat (strategy + prompt-writing), Claude Code CLI (autonomous coding), Gemini (research).
 
-**Prompt discipline for Claude Code:** what to read first, what to deliver, specific constraints, explicit regression checks, report-when-done structure. One prompt = one paste; embedded code fences are instructions.
+**Prompt discipline:** what to read first, what to deliver, specific constraints, explicit regression checks, report-when-done structure. One prompt = one paste; embedded code fences are instructions. Prompts that stopped Claude Code from running the same prompt twice: when Claude says "this is already done" — go with verification + move on rather than re-running.
 
-**Partner-mode (not tutor-mode):** direct pushback both ways, concise responses for narrow topics, skip decision-fatigue framing, surface counterweights.
+**Partner-mode (not tutor-mode):** direct pushback both ways, concise responses, surface counterweights.
 
 **Commit discipline:** smaller increments, descriptive messages naming stage + what shipped, push at sub-stage boundaries, revert cleanly when cross-view regressions appear.
 
@@ -367,67 +365,60 @@ Current PM-facing build targets scheduler/dispatch persona. Licensed PMs who own
 
 ## Session Log
 
-### 2026-04-24 (late evening) — Stage 10.1 + 10.2 shipped, validated end-to-end
+### 2026-04-25 (late evening, continuous from 2026-04-24) — Stage 10 functionally complete
 
-**Pushed earlier in same date:** all Stage 9 commits (`b2e545c` was last).
+**Pushed earlier in same session:**
+- `b1152bd` (Stage 10.3 + 10.3.5: CSV upload UI + nav link)
 
-**Shipped this session, locally only:**
-- `2b5a276` — Stage 10.1: SOS parser + dev tester. 46-test suite passing.
-- `3be2b37` — Stage 10.2: matching engine + migration 16 + processRun + matcher playground. 28-test matcher suite passing.
+**Shipped this session and pushed at end:**
+- `6746151` — Stage 10.4: Chief QC scoreboard + field-fit flagging UX
+- `52de61f` — Stage 10.4.5: Migration 17 + clean field-fit schema + UI refactor
 
-**Migration 16 applied** (manually via SQL Editor): added `shot_type text` + `design_point_id_b uuid` to `stakeout_qc_points`; dropped legacy CHECK constraints on `actual_offset_direction` (was N/S/E/W) and on parsed/declared_stake_type (was single-letter codes); extended h_status/v_status CHECKs to permit new classifier values.
+**Stage 10.4 architecture:**
+- `useCrewQcRun` hook fetches latest run + points from DB on mount
+- `CrewQcScoreboard` renders adaptive headline ("All stakes in tolerance" / "X of Y need review" / "X stakes out of tolerance"), counts row chips, per-point list with red accent bar on out_of_tol
+- `CrewQcPointSheet` bottom sheet with full point detail + reason picker (5 SOS codes + Other with text input)
+- Adaptive Submit button: full teal when 0 out_of_tol, 60% opacity + caveat line when any out_of_tol
+- Persistence across navigation via DB-backed fetch (not in-memory)
 
-**Validation against `8.5_TESTING` assignment (2026-04-24):**
-- All 6 shot types classify correctly
-- Re-upload regression: total qc_points stays at 7, prior run deleted, new run row written with correct counts
-- 28 matcher tests pass + 46 parser tests pass
+**Stage 10.4.5 schema cleanup:**
+- Migration 17: extended `field_fit_reason` CHECK to include OB/AC/SA/CF/OT (preserved legacy values), modified `enforce_qc_point_column_protection_fn` to allow chief role to transition `h_status` between out_of_tol ↔ field_fit on own assigned rows, backfilled existing prefix-encoded data
+- Refactored `CrewQcPointSheet` and `CrewQcScoreboard` to use direct `h_status` reads/writes instead of parsing `[OB]` prefix from `field_fit_note`
+- All existing trigger protections preserved verbatim (delta_*, observed_*, parsed_*, declared_*, actual_* columns still locked from chief writes)
 
 **Decided this session:**
-- **SurveyOS owns input formats.** SOS grammar is ours; firms adopt or pay for custom parser. Apple-style opinionated default. Added to Architectural Constraints.
-- **Stage 10 is category-defining.** No competitor has this complete loop. Industry gap confirmed via Trimble HTM tolerance report review (sample provided by Theo).
-- **Per-chief accuracy intelligence is the most defensible IP angle.** Logged as memory + Phase 2 feature; consider provisional patent when algorithm crystallizes.
-- **Patents not pursued during Phase 1.** Execution velocity + customer relationships > IP strategy at this stage.
-- **Bearings stored as decimal-degree string** for point/check shots; "perpendicular" literal for line stakes.
-- **Side-agnostic line-stake matching for MVP.**
-- **Most-recent-wins for duplicates.** Earlier observations dropped pre-match.
-- **Re-upload overwrites.** Drops prior `stakeout_qc_runs` row, cascades to qc_points.
+- Stage 10.4 design intent locked: scoreboard is the killer demo screen; chief should read status in 1 second; field-fit flagging happens in app with reason codes; check shots de-emphasized (chiefs use Trimble Access for setup verification); adaptive Submit visual weight
+- Trimble data collectors as primary device target — same UX as phone, portrait-first
+- Field-fit reason codes: OB (Obstruction), AC (Access), SA (Safety), CF (Conflict), OT (Other)
+- Schema constraint workarounds become tech debt — fix immediately when constraint conflicts with product requirements (10.4 → 10.4.5 follow-up)
+- Stage 10.5 (PM manual-match) likely folds into Stage 12 since chief-side field-fit covers most reconciliation needs
 
-**Open for next: Stage 10.3 — CSV upload UI.**
-- **Primary path: chief mobile.** Trimble Access on data collector exports CSV → email/AirDrop/Files share → SurveyOS crew app accepts via iOS file picker → triggers processRun → renders scoreboard (10.4).
-- **Fallback path: PM desktop.** AssignmentDetail gets a CSV upload zone for the case where chief defers and PM handles ingestion.
-- **Scope discussion in progress.** Key open questions: (1) where is the upload entry point in CrewApp — embedded in CrewAssignmentDetail or separate screen? (2) what does the chief see during processing — spinner + estimate? (3) what happens when 0 codes parse — block upload or proceed with parse_error rows? (4) PM desktop upload UX — drop zone or button? where on AssignmentDetail page?
+**Validated end-to-end on 8.5_TESTING:**
+- Chief uploads CSV → matcher classifies → scoreboard renders
+- Tap out_of_tol row → bottom sheet → field-fit reason picker → DB writes clean column values
+- Submit visual adapts to out_of_tol count
+- Persistence: navigate away and back, scoreboard renders from DB
+- Migration 17 backfilled existing prefix-encoded row from 10.4 testing cleanly
 
----
-
-### 2026-04-24 (evening) — Stage 9 pushed + Stage 10.1 shipped
-
-(See git log for commit-by-commit; full detail compressed for journal brevity.)
-
-Stage 9 (crew mobile UI) pushed to origin at `b2e545c`. Stage 10.1 (SOS parser) shipped locally at `2b5a276`. SOS grammar locked. IP strategy reviewed. Predictive accuracy vision logged.
+**Open for next session:** Stage 11 — accuracy narratives. Edge function + pg_cron schedule + Claude API integration for natural-language QC summaries. Feeds IntelligenceDrawer and MorningBrief.
 
 ---
 
-### 2026-04-24 (afternoon) — Stage 9 (crew mobile UI) shipped
+### 2026-04-24 (late evening) — Stage 10.1, 10.2, 10.3, 10.3.5 shipped
 
-Six commits 9.1 through 9.4c shipped and pushed. Migration 15 added scope_checklist and chief_field_notes columns. RLS policy added for field role UPDATEs.
-
----
-
-### 2026-04-24 (earlier) — Stage 8.5b-polish complete
-
-8 commits rebuilt cleanly on `feature/stakeout-qc`, all pushed at `5418c8f`. Layout-in-shared-components constraint locked. Find-point pattern, zoom-responsive sizing, label collision all banked as lessons.
+(Earlier session same date — see prior journal entries for full detail. Stage 9 push, then SOS parser, matching engine, CSV upload UI, sidebar nav.)
 
 ---
 
-### 2026-04-23 — Stage 8.5b-polish commits 1, 2, 2b, 2c (reverted)
+### 2026-04-24 (afternoon + evening) — Stage 9 shipped + Stage 10.1 begun
 
-Wrapper padding inside shared component broke AssignmentDetail QC view. Reverted. Lesson banked.
+Crew mobile UI complete (six commits 9.1 through 9.4c, pushed at b2e545c). SOS grammar discussion + 10.1 parser shipped. IP strategy reviewed. Patent decision: not Phase 1.
 
 ---
 
-### 2026-04-22 — Stage 8.5b attempt & rebuild plan
+### 2026-04-23 / 2026-04-22 — Stage 8.5b-polish + earlier
 
-8.5b WIP broken; stashed for reference. Rebuild plan via Path 2. Drew formalized as strategic resource. CLAUDE_JOURNAL.md established. Pricing framework captured.
+(See prior journal entries for full detail.)
 
 ---
 
@@ -435,8 +426,8 @@ Wrapper padding inside shared component broke AssignmentDetail QC view. Reverted
 
 When closing a chat session, before starting a new one, update this file with:
 
-1. **Session Log entry** — dated, what shipped, what was attempted, what stashed, what's open
-2. **Current State** section — update branch, commit, environment, next action
+1. **Session Log entry** — dated, what shipped, what was attempted, what's open
+2. **Current State** section — branch, commit, environment, next action
 3. **Phase 1 Roadmap** table — update status column for any stages completed
 4. **Known Bugs** — add any new bugs discovered
 5. **Phase 2 Feature Requests** — add any new deferred features
@@ -444,6 +435,4 @@ When closing a chat session, before starting a new one, update this file with:
 7. **Lessons Banked** — add any new technical insights
 8. **Pricing Framework** — update if tiers, add-ons, or strategy evolve
 
-Keep entries concise. Link to commits and PR URLs where relevant. Don't duplicate information that lives in git commits; this is for things git doesn't capture — intent, context, deferred decisions, relationship details.
-
-Commit the journal update alongside your code changes. The journal is part of the codebase.
+Keep entries concise. Link to commits. Don't duplicate git-captured info; this is for intent, context, deferred decisions, relationship details. Commit the journal update alongside code changes.
