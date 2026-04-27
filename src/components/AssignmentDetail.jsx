@@ -665,8 +665,9 @@ export default function AssignmentDetail({
             </div>
             )}
 
-            {/* Stage 11.1: Claude-generated narrative summary */}
-            {latestRunId && <QcNarrativeBlock runId={latestRunId} />}
+            {/* Stage 11.1 + 11.2: Claude-generated narrative summary,
+                with PM-only regenerate affordance. */}
+            {latestRunId && <QcNarrativeBlock runId={latestRunId} canRegenerate />}
 
             {/* Stat cards */}
             <div className="detail-stats">

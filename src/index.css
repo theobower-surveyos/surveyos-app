@@ -93,3 +93,11 @@ body {
     padding-bottom: 100px !important; /* Give room so the nav doesn't cover the map */
   }
 }
+
+/* Shared spin animation — used by Stage 11.2 narrative regenerate icon
+   and any future inline busy indicator. Kept here rather than scoped to
+   one component so the same name is reusable. */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
