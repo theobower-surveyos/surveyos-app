@@ -376,7 +376,11 @@ export default function App() {
     );
   }
 
-  const isOfficeUser = !['field_crew', 'technician', 'cad', 'drafter'].includes((profile.role || '').toLowerCase().trim());
+  // Stage 12.1.1: Licensed PMs (role='pm') land directly on their
+  // portfolio dashboard at /, not on the dispatch-focused MorningBrief
+  // intended for owners/admins. Crew/technician/cad/drafter were
+  // already excluded.
+  const isOfficeUser = !['field_crew', 'technician', 'cad', 'drafter', 'pm'].includes((profile.role || '').toLowerCase().trim());
   if (isOfficeUser && !hasReadBrief) return (
     <ErrorBoundary>
       <MorningBrief

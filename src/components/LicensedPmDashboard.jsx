@@ -33,14 +33,23 @@ export default function LicensedPmDashboard({ supabase, profile }) {
                 return;
             }
 
-            const { data: projectData } = await supabase
+            // Stage 12.1.1: select('*') instead of an enumerated column
+            // list — fee/location/scheduled_date are real fields in this
+            // codebase but were added at runtime (no migration in repo),
+            // so naming them explicitly causes PostgREST to error out
+            // and return null on Supabase instances that don't have those
+            // columns yet. '*' tracks whatever the table actually exposes.
+            const { data: projectData, error: projectErr } = await supabase
                 .from('projects')
-                .select('id, project_name, status, fee, location, scheduled_date, completed_at, created_at')
+                .select('*')
                 .eq('assigned_to', userId)
                 .neq('status', 'archived')
                 .order('created_at', { ascending: false });
 
             if (cancelled) return;
+            if (projectErr) {
+                console.warn('[LicensedPmDashboard] projects fetch error:', projectErr.message);
+            }
             const list = projectData || [];
             setProjects(list);
 
