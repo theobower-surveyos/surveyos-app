@@ -20,6 +20,7 @@ import MobileCrewView from './views/MobileCrewView';
 import Stakeout from './views/Stakeout';
 import WelcomeScreen from './components/WelcomeScreen';
 import CrewApp from './components/crew/CrewApp';
+import LicensedPmDashboard from './components/LicensedPmDashboard';
 import SosParserTester from './components/dev/SosParserTester';
 import { registerServiceWorker } from './crew-pwa/swRegistration';
 
@@ -438,15 +439,24 @@ export default function App() {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {mobileNavBtn('/', 'command_center', '📊 Command Center')}
-            {mobileNavBtn('/dispatch', 'dispatch', '🗓️ Dispatch Board')}
-            {['owner', 'admin', 'pm'].includes((profile?.role || '').toLowerCase().trim()) &&
-              mobileNavBtn('/stakeout', 'stakeout', '🎯 Stakeout QC')}
-            {mobileNavBtn('/live-view', 'live_view', '📡 Live Field View', !!selectedProject)}
-            {mobileNavBtn('/network-ops', 'network-ops', '🌐 Network Ops')}
-            {mobileNavBtn('/equipment', 'equipment', '🧰 Equipment')}
-            {mobileNavBtn('/roster', 'roster', '👥 Team Roster')}
-            {mobileNavBtn('/client-portal', 'client-portal', '🤝 Client Portal')}
+            {(() => {
+              const role = (profile?.role || '').toLowerCase().trim();
+              const isPmOnly = role === 'pm';
+              const isOfficeNotPm = ['owner', 'admin'].includes(role);
+              return (
+                <>
+                  {isPmOnly && mobileNavBtn('/', 'command_center', '📁 My Projects')}
+                  {isOfficeNotPm && mobileNavBtn('/', 'command_center', '📊 Command Center')}
+                  {isOfficeNotPm && mobileNavBtn('/dispatch', 'dispatch', '🗓️ Dispatch Board')}
+                  {(isPmOnly || isOfficeNotPm) && mobileNavBtn('/stakeout', 'stakeout', '🎯 Stakeout QC')}
+                  {isOfficeNotPm && mobileNavBtn('/live-view', 'live_view', '📡 Live Field View', !!selectedProject)}
+                  {isOfficeNotPm && mobileNavBtn('/network-ops', 'network-ops', '🌐 Network Ops')}
+                  {isOfficeNotPm && mobileNavBtn('/equipment', 'equipment', '🧰 Equipment')}
+                  {isOfficeNotPm && mobileNavBtn('/roster', 'roster', '👥 Team Roster')}
+                  {(isPmOnly || isOfficeNotPm) && mobileNavBtn('/client-portal', 'client-portal', '🤝 Client Portal')}
+                </>
+              );
+            })()}
         </div>
 
         <div style={{ flex: 1 }}></div>
@@ -474,16 +484,26 @@ export default function App() {
               SURVEYOS
             </h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {navBtn('/', 'command_center', '📊 Command Center')}
-              {navBtn('/dispatch', 'dispatch', '🗓️ Dispatch Board')}
-              {['owner', 'admin', 'pm'].includes((profile?.role || '').toLowerCase().trim()) &&
-                navBtn('/stakeout', 'stakeout', '🎯 Stakeout QC')}
-              {navBtn('/live-view', 'live_view', '📡 Live Field View', !!selectedProject)}
-              {navBtn('/network-ops', 'network-ops', '🌐 Network Ops')}
-              {navBtn('/equipment', 'equipment', '🧰 Equipment')}
-              {navBtn('/roster', 'roster', '👥 Team Roster')}
-              {navBtn('/client-portal', 'client-portal', '🤝 Client Portal')}
-              {import.meta.env.DEV && navBtn('/dev/sos-parser', 'dev-sos', 'SOS Parser Tester')}
+              {(() => {
+                const role = (profile?.role || '').toLowerCase().trim();
+                const isPmOnly = role === 'pm';
+                const isOfficeNotPm = ['owner', 'admin'].includes(role);
+                const isOfficeAny = isPmOnly || isOfficeNotPm;
+                return (
+                  <>
+                    {isPmOnly && navBtn('/', 'command_center', '📁 My Projects')}
+                    {isOfficeNotPm && navBtn('/', 'command_center', '📊 Command Center')}
+                    {isOfficeNotPm && navBtn('/dispatch', 'dispatch', '🗓️ Dispatch Board')}
+                    {isOfficeAny && navBtn('/stakeout', 'stakeout', '🎯 Stakeout QC')}
+                    {isOfficeNotPm && navBtn('/live-view', 'live_view', '📡 Live Field View', !!selectedProject)}
+                    {isOfficeNotPm && navBtn('/network-ops', 'network-ops', '🌐 Network Ops')}
+                    {isOfficeNotPm && navBtn('/equipment', 'equipment', '🧰 Equipment')}
+                    {isOfficeNotPm && navBtn('/roster', 'roster', '👥 Team Roster')}
+                    {isOfficeAny && navBtn('/client-portal', 'client-portal', '🤝 Client Portal')}
+                    {import.meta.env.DEV && isOfficeAny && navBtn('/dev/sos-parser', 'dev-sos', 'SOS Parser Tester')}
+                  </>
+                );
+              })()}
             </div>
             <div style={{ flex: 1 }}></div>
             <div style={{ padding: '15px', backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: '8px', marginBottom: '20px' }}>
@@ -498,20 +518,27 @@ export default function App() {
         <div className="app-main-content" style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflowY: 'auto', boxSizing: 'border-box' }}>
           <Routes>
             {/* ══════════ ROLE-BASED ROUTING FOR HOME ══════════ */}
-            <Route path="/" element={
-              ['field_crew', 'technician'].includes((profile?.role || '').toLowerCase().trim()) ? (
+            <Route path="/" element={(() => {
+              const role = (profile?.role || '').toLowerCase().trim();
+              if (['field_crew', 'technician'].includes(role)) {
                 /* If Field Crew: Instantly bounce them to the Dispatch Agenda */
-                <Navigate to="/dispatch" replace />
-              ) : (
-                /* If Office Staff: Show the God-Mode Command Center */
+                return <Navigate to="/dispatch" replace />;
+              }
+              if (role === 'pm') {
+                /* Stage 12.1: Licensed PMs land on a portfolio-scoped
+                   dashboard instead of the firm-wide CommandCenter. */
+                return <LicensedPmDashboard supabase={supabase} profile={profile} />;
+              }
+              /* Owner / admin / cad / drafter — God-Mode Command Center. */
+              return (
                 <>
-                  {['admin', 'owner', 'pm'].includes((profile?.role || '').toLowerCase().trim()) && (
+                  {['admin', 'owner'].includes(role) && (
                     <ProfitAnalytics supabase={supabase} profile={profile} activeProjects={projects.filter(p => ['scheduled','active','in_progress','pending'].includes(p.status))} />
                   )}
                   <CommandCenter profile={profile} projects={projects} teamMembers={teamMembers} onProjectSelect={(proj) => { setSelectedProject(proj); navigate(`/project/${proj.id}`); }} onCreateProject={handleCreateProject} onArchiveProject={handleArchiveProject} onProjectUpdate={handleProjectUpdate} />
                 </>
-              )
-            } />
+              );
+            })()} />
 
             <Route path="/dispatch" element={<DispatchBoard supabase={supabase} profile={profile} projects={projects} teamMembers={teamMembers} onProjectUpdate={handleProjectUpdate} onRefresh={() => fetchDashboardData(session.user.id)} />} />
             <Route path="/network-ops" element={<NetworkOps supabase={supabase} profile={profile} />} />
