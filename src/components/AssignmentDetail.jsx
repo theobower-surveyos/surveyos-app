@@ -21,6 +21,7 @@ import AssignmentProgressBar from './AssignmentProgressBar.jsx';
 import ReconciliationModal from './ReconciliationModal.jsx';
 import PmUploadButton from './pm/PmUploadButton.jsx';
 import PmUploadDropZone from './pm/PmUploadDropZone.jsx';
+import QcNarrativeBlock from './qc/QcNarrativeBlock.jsx';
 import { exportAsCSV, exportAsXLSX } from '../utils/stakeoutExports.js';
 
 function isExportable(status) {
@@ -100,6 +101,10 @@ export default function AssignmentDetail({
     const [resendConfirmOpen, setResendConfirmOpen] = useState(false);
     const [resendBusy, setResendBusy] = useState(false);
     const [exportBusy, setExportBusy] = useState(null); // 'csv' | 'xlsx' | null
+    // Latest QC run id, used to address the Stage 11.1 narrative.
+    // Tracked separately because stakeout_qc_summary view doesn't
+    // expose run_id, and the narrative is a per-run artifact.
+    const [latestRunId, setLatestRunId] = useState(null);
 
     function reload() {
         setReloadTick((t) => t + 1);
@@ -302,6 +307,30 @@ export default function AssignmentDetail({
             cancelled = true;
         };
     }, [supabase, assignmentId, reloadTick]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // ── Latest QC run id ─────────────────────────────────────────
+    // Drives the Stage 11.1 narrative block. Refetches alongside the
+    // main load so a fresh upload (which bumps reloadTick) surfaces
+    // the new run's narrative.
+    useEffect(() => {
+        let cancelled = false;
+        async function fetchLatestRun() {
+            if (!assignmentId) {
+                setLatestRunId(null);
+                return;
+            }
+            const { data } = await supabase
+                .from('stakeout_qc_runs')
+                .select('id')
+                .eq('assignment_id', assignmentId)
+                .order('submitted_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+            if (!cancelled) setLatestRunId(data?.id ?? null);
+        }
+        fetchLatestRun();
+        return () => { cancelled = true; };
+    }, [supabase, assignmentId, reloadTick]);
 
     // ── Derived: per-point status + extra data for plan tooltip ──
     const { pointStatusMap, extraPointData, statusCounts } = useMemo(() => {
@@ -635,6 +664,9 @@ export default function AssignmentDetail({
                 </dl>
             </div>
             )}
+
+            {/* Stage 11.1: Claude-generated narrative summary */}
+            {latestRunId && <QcNarrativeBlock runId={latestRunId} />}
 
             {/* Stat cards */}
             <div className="detail-stats">

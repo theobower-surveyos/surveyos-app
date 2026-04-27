@@ -27,6 +27,7 @@
 
 import { parseStakeCode } from './sosParser.js';
 import { matchStake } from './sosMatcher.js';
+import { triggerNarrativeGeneration } from './qcNarrative.js';
 
 /**
  * @typedef {Object} RawRow
@@ -308,7 +309,14 @@ export async function processRun({ assignmentId, rows }, supabase) {
         if (insErr) throw new Error(`Could not insert qc_points: ${insErr.message}`);
     }
 
-    // ── 7. Summary ─────────────────────────────────────────────
+    // ── 7. Trigger narrative generation (fire-and-forget) ──────
+    // Stage 11.1: ask the generate-qc-narrative Edge Function to
+    // produce a Claude-written summary of this run. Errors land in
+    // stakeout_qc_narratives.error so the UI can surface them; the
+    // chief's submit flow never waits on this.
+    triggerNarrativeGeneration({ runId });
+
+    // ── 8. Summary ─────────────────────────────────────────────
     return {
         run_id: runId,
         total_rows: matched.length,

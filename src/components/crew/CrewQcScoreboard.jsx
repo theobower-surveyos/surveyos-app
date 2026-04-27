@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import CrewQcPointSheet from './CrewQcPointSheet.jsx';
+import QcNarrativeBlock from '../qc/QcNarrativeBlock.jsx';
 
 // ─── CrewQcScoreboard ────────────────────────────────────────────────
 // Chief-facing QC scoreboard. Renders four regions, top to bottom:
@@ -78,7 +79,7 @@ const SORT_ORDER = [
 
 const FILTER_KEYS = ['in_tol', 'out_of_tol', 'field_fit', 'check', 'unmatched'];
 
-export default function CrewQcScoreboard({ points, onPointUpdate }) {
+export default function CrewQcScoreboard({ points, runId, onPointUpdate }) {
     const [filter, setFilter] = useState(null);
     const [openPoint, setOpenPoint] = useState(null);
 
@@ -129,6 +130,8 @@ export default function CrewQcScoreboard({ points, onPointUpdate }) {
 
     return (
         <div style={{ marginBottom: '20px' }}>
+            {runId && <QcNarrativeBlock runId={runId} compact />}
+
             <Headline {...headline} />
 
             <div style={{

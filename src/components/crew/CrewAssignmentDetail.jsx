@@ -189,6 +189,7 @@ export default function CrewAssignmentDetail({ assignmentId, onBack }) {
                             <Section title="QC scoreboard">
                                 <CrewQcScoreboard
                                     points={qcPoints}
+                                    runId={qcRun.id}
                                     onPointUpdate={refreshQc}
                                 />
                             </Section>
