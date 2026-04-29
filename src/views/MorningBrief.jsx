@@ -29,6 +29,8 @@ const isDateInSpan = (dayISO, startISO, endISO) => {
   const e = (endISO || startISO).slice(0, 10);
   return dayISO >= s && dayISO <= e;
 };
+// projects.assigned_to is the Party Chief, NOT the Lead PM.
+// For Licensed PM ownership, use projects.lead_pm_id.
 const getCrewId = (project) => {
   const a = project?.assigned_to;
   if (!a) return null;

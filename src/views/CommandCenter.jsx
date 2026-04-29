@@ -296,7 +296,7 @@ export default function CommandCenter({ profile, projects, teamMembers, onProjec
         onClose={() => setDrawerProject(null)}
       />
       <IntelligenceDrawer isOpen={isIntelOpen} onClose={() => { setIsIntelOpen(false); setSelectedProjectId(null); }} projectId={selectedProjectId} />
-      <DeploymentModal isOpen={isDeploying} onClose={() => setIsDeploying(false)} teamMembers={teamMembers} onDispatch={async (data) => { const newProject = await onCreateProject(data); if (newProject?.id) showToast('Dispatch initialized — project added to Holding Queue'); else showToast('Dispatch failed — please retry'); setIsDeploying(false); }} />
+      <DeploymentModal isOpen={isDeploying} onClose={() => setIsDeploying(false)} teamMembers={teamMembers} profile={profile} onDispatch={async (data) => { const newProject = await onCreateProject(data); if (newProject?.id) showToast('Dispatch initialized — project added to Holding Queue'); else showToast('Dispatch failed — please retry'); setIsDeploying(false); }} />
 
       {toast && (
         <div style={{ position: 'fixed', bottom: '32px', left: '50%', transform: 'translateX(-50%)', zIndex: 1100, padding: '14px 28px', borderRadius: '14px', backgroundColor: '#141414', border: '1px solid rgba(50, 215, 75, 0.2)', color: '#32D74B', fontSize: '0.88rem', fontWeight: '600', boxShadow: '0 12px 40px rgba(0,0,0,0.5)', animation: 'fadeIn 0.3s ease-out' }}>{toast}</div>

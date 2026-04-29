@@ -288,6 +288,8 @@ export default function App() {
   }
 
   async function handleCreateProject(projectData) {
+    // projects.assigned_to is the Party Chief, NOT the Lead PM.
+    // For Licensed PM ownership, use projects.lead_pm_id.
     let assignedTo = projectData.assigned_to;
     if (assignedTo && typeof assignedTo === 'object') assignedTo = assignedTo.id;
 
@@ -300,10 +302,12 @@ export default function App() {
       scheduled_date: projectData.scheduled_date || null,
       scheduled_end_date: projectData.scheduled_end_date || null,
       scope: Array.isArray(projectData.scope) ? projectData.scope : (projectData.scope_checklist || []),
+      lead_pm_id: projectData.lead_pm_id || null,
       assigned_to: assignedTo || null,
       assigned_crew: Array.isArray(projectData.assigned_crew) ? projectData.assigned_crew : [],
       hide_financials: projectData.hide_financials || false,
       required_equipment: projectData.required_equipment || [],
+      priority: projectData.priority || 'standard',
       status: 'pending',
     }]).select();
 

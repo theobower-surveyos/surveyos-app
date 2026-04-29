@@ -140,6 +140,8 @@ const shiftSpan = (startISO, endISO, newStartISO) => {
   return { start: toISODate(newStart), end: toISODate(newEnd) };
 };
 
+// projects.assigned_to is the Party Chief, NOT the Lead PM.
+// For Licensed PM ownership, use projects.lead_pm_id.
 const getCrewId = (project) => {
   const a = project?.assigned_to;
   if (!a) return null;
@@ -434,6 +436,10 @@ export default function DispatchBoard({ supabase, profile, projects = [], teamMe
       // Multi-day spans shift by preserving the calendar-day length: the
       // drop target becomes the new start, and the new end is computed so
       // the whole range slides as one unit.
+      //
+      // The `assigned_to` writes below are projects.assigned_to (Party
+      // Chief), NOT projects.lead_pm_id (Licensed PM). Dispatch never
+      // touches lead_pm_id.
       const project = localProjects.find(x => x.id === projectId);
       const oldLeadId = getCrewId(project);
       const isLeadChange = oldLeadId !== crew.id;
@@ -1602,6 +1608,10 @@ export function DispatchProjectDrawer({ project, crewLookup, equipmentList = [],
                 flexDirection: 'column',
                 gap: '12px',
               }}>
+                {/* projects.assigned_to is the Party Chief, NOT the Lead PM.
+                    For Licensed PM ownership, use projects.lead_pm_id. The
+                    "Assign to" select and the "Unschedule" button below both
+                    write projects.assigned_to (Party Chief), never lead_pm_id. */}
                 <label style={{ fontSize: '0.66rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1.5px', fontWeight: '700' }}>
                   Assign to
                   <select
@@ -2944,7 +2954,8 @@ function statusDotColor(status) {
 
 // ══════════ CREW AVATAR STACK ══════════
 // Small horizontal stack of crew-member initials. Max 3 visible, +N overflow.
-// Excludes the lead (assigned_to) — the lead is implicit from the row context.
+// Excludes the lead (projects.assigned_to, the Party Chief — NOT lead_pm_id)
+// — the lead is implicit from the row context.
 function CrewAvatarStack({ crewIds = [], leadId, teamLookup = [], size = 16 }) {
   const byId = new Map(teamLookup.map(m => [m.id, m]));
   const supporting = (Array.isArray(crewIds) ? crewIds : [])

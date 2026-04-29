@@ -3,7 +3,9 @@ import React, { useEffect, useState } from 'react';
 // ─── LicensedPmDashboard ─────────────────────────────────────────────
 // Stage 12.1: home page for users with role='pm' (the Licensed PM
 // persona). Replaces the firm-wide CommandCenter for these users at
-// path "/". Scoped to projects.assigned_to = current user.
+// path "/". Scoped to projects.lead_pm_id = current user (Stage 12.1.5
+// fix; prior versions filtered on projects.assigned_to which is the
+// Party Chief column, not Licensed PM ownership).
 //
 // Three regions, top to bottom:
 //   1. Greeting bar — time-of-day + portfolio size
@@ -39,10 +41,14 @@ export default function LicensedPmDashboard({ supabase, profile }) {
             // so naming them explicitly causes PostgREST to error out
             // and return null on Supabase instances that don't have those
             // columns yet. '*' tracks whatever the table actually exposes.
+            //
+            // projects.assigned_to is the Party Chief, NOT the Lead PM.
+            // For Licensed PM ownership, use projects.lead_pm_id (added
+            // in Migration 20 as part of Stage 12.1.5).
             const { data: projectData, error: projectErr } = await supabase
                 .from('projects')
                 .select('*')
-                .eq('assigned_to', userId)
+                .eq('lead_pm_id', userId)
                 .neq('status', 'archived')
                 .order('created_at', { ascending: false });
 

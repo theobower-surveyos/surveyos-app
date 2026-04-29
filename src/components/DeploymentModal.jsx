@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
-import { UploadCloud, X, Zap, FileCheck } from 'lucide-react';
+import { UploadCloud, X, FileCheck } from 'lucide-react';
 
 const FONT = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif";
 const MONO = "'JetBrains Mono', 'SF Mono', monospace";
@@ -14,12 +14,26 @@ const SCOPE_OPTIONS = [
   'Control Network',
 ];
 
-export default function DeploymentModal({ isOpen, onClose, teamMembers, onDispatch }) {
+// Lead PM eligibility — projects.lead_pm_id may reference any user
+// whose role is owner or pm in the same firm. Stage 12.1.5 confirmed
+// production roles in user_profiles are field_crew / owner / pm only;
+// licensed_pm / admin are aspirational labels in CLAUDE.md not yet
+// represented as data.
+const PM_ELIGIBLE_ROLES = ['owner', 'pm'];
+const isPmEligible = (role) => PM_ELIGIBLE_ROLES.includes((role || '').toLowerCase().trim());
+
+export default function DeploymentModal({ isOpen, onClose, teamMembers, profile, onDispatch }) {
+  // Default Lead PM to the current user when they're PM-eligible
+  // (owner/pm). Otherwise no default — explicit pick required so we
+  // don't write a chief into the lead_pm_id column.
+  const defaultLeadPmId = isPmEligible(profile?.role) ? (profile?.id || '') : '';
+
   const [projectName, setProjectName] = useState('');
   const [location, setLocation] = useState('');
   const [scheduledDate, setScheduledDate] = useState('');
   const [contractFee, setContractFee] = useState('');
   const [scope, setScope] = useState([]);
+  const [leadPmId, setLeadPmId] = useState(defaultLeadPmId);
   const [chiefId, setChiefId] = useState('');
   const [additionalCrew, setAdditionalCrew] = useState([]);
   const [priority, setPriority] = useState('standard');
@@ -34,6 +48,7 @@ export default function DeploymentModal({ isOpen, onClose, teamMembers, onDispat
     setScheduledDate('');
     setContractFee('');
     setScope([]);
+    setLeadPmId(defaultLeadPmId);
     setChiefId('');
     setAdditionalCrew([]);
     setPriority('standard');
@@ -65,13 +80,17 @@ export default function DeploymentModal({ isOpen, onClose, teamMembers, onDispat
     if (!projectName.trim()) return;
     setIsSubmitting(true);
 
-    // Build the clean payload — all UUIDs are raw strings
+    // Build the clean payload — all UUIDs are raw strings.
+    //
+    // projects.assigned_to is the Party Chief, NOT the Lead PM.
+    // For Licensed PM ownership, use projects.lead_pm_id (Stage 12.1.5).
     await onDispatch({
       project_name: projectName.trim(),
       location: location.trim() || null,
       scheduled_date: scheduledDate || new Date().toISOString().split('T')[0],
       contract_fee: parseFloat(contractFee) || 0,
       scope: scope,
+      lead_pm_id: leadPmId || null,
       assigned_to: chiefId || null,
       assigned_crew: additionalCrew.length > 0 ? additionalCrew : [],
       status: 'pending',
@@ -174,6 +193,21 @@ export default function DeploymentModal({ isOpen, onClose, teamMembers, onDispat
             <input type="text" value={projectName} onChange={(e) => setProjectName(e.target.value)} placeholder="Site address or Lot #" style={INP} />
           </div>
 
+          {/* LEAD PM (projects.lead_pm_id — Licensed PM ownership) */}
+          <div>
+            <label style={LBL}>Lead PM</label>
+            <select value={leadPmId} onChange={(e) => setLeadPmId(e.target.value)} style={{ ...INP, cursor: 'pointer' }}>
+              <option value="">Select…</option>
+              {(teamMembers || [])
+                .filter((m) => isPmEligible(m.role))
+                .map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {`${m.first_name || ''} ${m.last_name || ''}`.trim() || m.email} ({m.role})
+                  </option>
+                ))}
+            </select>
+          </div>
+
           {/* LOCATION */}
           <div>
             <label style={LBL}>Location</label>
@@ -222,7 +256,9 @@ export default function DeploymentModal({ isOpen, onClose, teamMembers, onDispat
             </div>
           </div>
 
-          {/* PARTY CHIEF (primary assigned_to) */}
+          {/* PARTY CHIEF (projects.assigned_to)
+              projects.assigned_to is the Party Chief, NOT the Lead PM.
+              For Licensed PM ownership, use projects.lead_pm_id. */}
           <div>
             <label style={LBL}>Party Chief</label>
             <select value={chiefId} onChange={(e) => setChiefId(e.target.value)} style={{ ...INP, cursor: 'pointer' }}>
@@ -278,13 +314,14 @@ export default function DeploymentModal({ isOpen, onClose, teamMembers, onDispat
             </div>
           </div>
 
-          {/* PRIORITY */}
+          {/* PRIORITY (projects.priority — Stage 12.1.5 wired this through) */}
           <div>
             <label style={LBL}>Priority</label>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <PriorityButton active={priority === 'standard'} onClick={() => setPriority('standard')} label="Standard" color="#A1A1AA" />
-              <PriorityButton active={priority === 'critical'} onClick={() => setPriority('critical')} label="CRITICAL / RUSH" color="#FF453A" icon={<Zap size={13} strokeWidth={2.5} />} />
-            </div>
+            <select value={priority} onChange={(e) => setPriority(e.target.value)} style={{ ...INP, cursor: 'pointer' }}>
+              <option value="low">Low</option>
+              <option value="standard">Standard</option>
+              <option value="high">High</option>
+            </select>
           </div>
 
           {/* LAUNCH BUTTON */}
@@ -314,24 +351,8 @@ export default function DeploymentModal({ isOpen, onClose, teamMembers, onDispat
 }
 
 // ═══════════════════════════════════════════════════════════
-// SUB-COMPONENTS & TOKENS
+// TOKENS
 // ═══════════════════════════════════════════════════════════
-
-function PriorityButton({ active, onClick, label, color, icon }) {
-  return (
-    <button type="button" onClick={onClick} style={{
-      flex: 1, padding: '10px 14px', borderRadius: '10px',
-      border: `1px solid ${active ? color : 'rgba(255,255,255,0.08)'}`,
-      backgroundColor: active ? `${color}15` : 'var(--bg-surface, #111)',
-      color: active ? color : '#555',
-      fontSize: '0.78rem', fontWeight: '700', fontFamily: FONT,
-      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-      transition: 'all 0.15s ease',
-    }}>
-      {icon}{label}
-    </button>
-  );
-}
 
 const LBL = {
   display: 'block', fontSize: '0.7rem', fontWeight: '700',
