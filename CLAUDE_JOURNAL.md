@@ -12,6 +12,10 @@
 
 ## ⚠️ READ THIS FIRST IF STARTING A NEW SESSION (2026-04-28)
 
+**Update — late 2026-04-28:** Stage 12.1.5 has now shipped (7 commits ahead of `33e3419`). All six migration files applied, code updates landed, test data archived to three survivors. See **"2026-04-28 — Stage 12.1.5 Shipped"** entry under `## Session Log` for the full picture and decisions. The audit context below is preserved as history. Next session: Stage 12.1.7 (Stitch polish + functional integrations) — foundation is correct, build on it.
+
+---
+
 **Tonight's session was an audit + replan, not a build session.** No code shipped. The audit revealed real foundational issues that change what comes next.
 
 **Critical findings:**
@@ -710,9 +714,95 @@ Current PM-facing build targets scheduler/dispatch persona. Licensed PMs who own
 
 **Commit discipline:** smaller increments, descriptive messages naming stage + what shipped, push at sub-stage boundaries, revert cleanly when cross-view regressions appear.
 
+**Verification per build step:** Every commit ships with its verification artifact. Schema changes verify via SQL queries on the linked DB. Code changes verify via `npm run build` plus a smoke check (DB readback or scoped UI exercise). Edge Functions verify via end-to-end trigger from a real auth context. RLS changes verify via cross-firm leak attempt or auth-context regression test. No commit lands without its verification result captured in the commit body or the session log.
+
+**Options-then-recommendation for non-trivial decisions:** When suggesting an architectural decision, feature scoping, migration approach, UX pattern, or refactor strategy, present 2–4 options with explicit tradeoffs, then recommend one with reasoning. Mechanical execution is exempt — direct action is fine for known-shape edits.
+
 ---
 
 ## Session Log
+
+### 2026-04-28 — Stage 12.1.5 Shipped (Schema Correctness + Foundation Fix)
+
+**What this session was:** Executed the full Stage 12.1.5 plan from the earlier 2026-04-28 audit. Six numbered migration files (four schema/policy, two data-record) plus code updates and test-data hygiene. Foundation work complete; Phase 1 unblocked for Stage 12.1.7+ feature work.
+
+**Migrations applied (six numbered files; idempotent against production):**
+
+- **20** schema sync — captured 23 columns of drift on `projects` (IF NOT EXISTS, no-op against prod), added `lead_pm_id`, `address`, `priority`, `client_contact_name`, `client_contact_phone` on `projects`, `pm_site_notes` on `stakeout_assignments`, folded in 2-column drift on `user_profiles` (`certifications`, `assigned_equipment` text[]). Reversed Migration 19's `assigned_to` comment back to "Party Chief, NOT Licensed PM."
+- **20a** backfill — restored `assigned_to = Andrew` (Party Chief, field_crew) and set `lead_pm_id = Maynard` (Licensed PM, pm) on the four ex-Migration-19 projects. Corrected the 5th misassigned project surfaced during Step 0 (TEST_260402, theo as owner) to `assigned_to = NULL, lead_pm_id = theo`.
+- **21** RLS hardening — dropped `Sandbox Master Projects` and `Sandbox Master Profile Policy` (would have rendered RLS useless if simply enabled), dropped legacy inline-subquery policies, added `Office roles manage firm projects` (owner/admin/pm) and `Firm mates read profiles`, enabled RLS on `projects` and `user_profiles`, applied `security_invoker = true` to `crew_utilization` and `stakeout_qc_summary` views.
+- **22** party_chief write whitelist — BEFORE UPDATE trigger restricting chief writes (party_chief + field_crew) to `status, submitted_at, chief_field_notes` only. 25 column checks enumerated explicitly.
+- **23** qc_points CASCADE fix — AFTER DELETE trigger on `stakeout_assignment_points` cleans matching qc_points by composite key (no direct FK exists). Verified destructively on a StakeoutTest assignment (asgn 6→5, qc 6→5, target qc 1→0).
+- **24** test data archive — preserved 8.5A_TESTING (gold-standard fixture: 513 design pts, 488 asgn pts, 1 run, 6 qc pts), StakeoutTest (10 / 9 / 41 / 2 / 9), Kimley Marketing (real client name kept for future demo, no fixture data). Archived 15 sloppy fixtures.
+
+(The original audit predicted four migrations (20–23). 20a and 24 are data-only operations recorded as numbered migration files for git-history preservation, matching the project's established pattern from Migration 19. Not scope creep.)
+
+**Code updates:**
+
+- `LicensedPmDashboard.jsx` — query filters `lead_pm_id` instead of `assigned_to`. Maynard's portfolio rendering verified via smoke test (4 backfilled projects appear).
+- `DeploymentModal.jsx` — Lead PM selector added between Project Name and Location. Filtered to `role IN ('owner','pm')`, firm-scoped via `teamMembers` (already firm-filtered upstream). Defaults to current user when their role is owner/pm; otherwise explicit pick required (no chief is silently written into `lead_pm_id`). Priority swapped from 2-option toggle (standard/critical) to 3-option select (low/standard/high). Both fields persist into the projects insert. Removed orphaned `Zap` import + `PriorityButton` sub-component.
+- `CommandCenter.jsx` — passes `profile` to DeploymentModal so the Lead PM default can evaluate.
+- `App.jsx` — `handleCreateProject` now forwards `lead_pm_id` and `priority` from the modal payload into the projects insert. The wire that was previously silently dropping priority is now connected.
+- `DispatchBoard.jsx` — semantic comments at `getCrewId`, drag-drop handler, mobile assign/unschedule editor, and CrewAvatarStack header. `project?.address` references verified null-safe via existing `|| project?.location` fallback; no functional change.
+- `MorningBrief.jsx` — semantic comment at `getCrewId` helper.
+- Skipped `TodaysWork.jsx` and `EquipmentLogistics.jsx` per the rule — both reference `equipment.assigned_to` (text first-name string), not `projects.assigned_to`.
+
+**Manual UI verification (Step 6 + Step B):**
+
+- Lead PM dropdown rendering, role filter (`role IN ('owner','pm')`), firm scoping, default-to-current-user (theo as owner), and priority dropdown all confirmed via UI exercise. Throwaway project MODAL_TEST_DELETE_ME (later archived in Migration 24) submitted cleanly with `lead_pm_id` populated by a real PM UUID and `priority='standard'`. Multi-PM firms first-class supported.
+- Edge Function regression test for Migration 21: theo regenerated narrative on 8.5A_TESTING / "8.5_TESTING" run (run_id `e000ec1f-...`); returned 200, body content changed (real Anthropic regeneration, not a stale cache), zero RLS errors in console or Edge Function logs. **Office-role auth context verified.** Chief-side path (Andrew submitting fresh QC upload) deferred — Andrew has zero `stakeout_assignments` rows because dispatch never creates them; chief-side regression check waits on Stage 14.
+
+**Schema findings from Step 0 audit:**
+
+- Postgres 17.6 → `security_invoker` views fully supported (Migration 21 used it).
+- Production `user_profiles.role` data has only `field_crew`, `owner`, `pm` — no `party_chief`, `admin`, `cad`, `drafter`, `technician`, `licensed_pm`. CLAUDE.md's broader role list is aspirational. The `permissions` RBAC matrix references all 8 documented roles though, so the gap is on user-data side, not the matrix.
+- 23-column drift on `projects` matched the audit estimate verbatim. All captured idempotently in Migration 20.
+- 2-column drift on `user_profiles` (`certifications`, `assigned_equipment` text[]) — captured in Migration 20.
+- `equipment` is a whole-table drift (no migration creates it). Deferred to Stage 14 with the planned bigint→uuid + assigned_to text→uuid cleanup.
+- `firms` (22 cols) and `crew_unavailability` (8 cols) have zero drift relative to migrations.
+- `get_my_firm_id()` (Migration 01) is already `SECURITY DEFINER` with locked search_path — Migration 21 reused it instead of creating the prompt's proposed duplicate `user_firm_id()`. Existing helper bypasses RLS during execution, so no recursion risk in user_profiles policies.
+- **Five projects misassigned, not four as the audit journal stated.** TEST_260402 was the unstated 5th (assigned_to = theo, owner). Backfill corrected to `assigned_to = NULL, lead_pm_id = theo`.
+- `permissions` table has no `firm_id` column — it's a global RBAC matrix. Existing `auth.uid() IS NOT NULL` policy is correct; Migration 21 correctly skipped it.
+- Two `Sandbox Master *` policies on `projects` and `user_profiles` would have rendered RLS useless if simply enabled — caught and dropped at Migration 21. Three other `Sandbox Master *` policies remain on `stakeout_*_points` / time / consumables tables and are tracked as deferred pre-pilot security.
+- `user_profiles.role` has no CHECK constraint — accepts any string. Deferred to Stage 13.
+- `8.5A_TESTING` master `stakeout_design_points` count is 513 (vs. 488 listed in earlier journal entries). 488 is the assignment subset; 513 is the project-level master. Both correct.
+
+**Decisions locked:**
+
+- Migration 22 trigger fires on `user_role IN ('party_chief', 'field_crew')` — restricts the chiefs that exist in production data (Andrew = field_crew) rather than just the aspirational `party_chief` role.
+- Migration 23 used trigger approach (not FK CASCADE) because no direct FK exists between qc_points and assignment_points; relationship is composite (assignment_id + design_point_id).
+- Migration 21 reused existing `get_my_firm_id()` instead of creating the duplicate `user_firm_id()` from the prompt — existing helper is already SECURITY DEFINER, no recursion risk.
+- **PM role has firm-wide project write access** via `Office roles manage firm projects` — Phase 1 acceptable for small firms (PMs cover for each other). **Phase 2 evolution: scope to `lead_pm_id = auth.uid()` OR explicit cross-PM permission, when multi-PM firms become paying customers.**
+- Lead PM selector defaults to current user only when `role IN ('owner', 'pm')`; otherwise explicit pick required.
+- Priority field exposed as 3-option select (low / standard / high) with `standard` as default, matching the `priority text DEFAULT 'standard'` schema column.
+- Test data: archived 15 of 18 dev firm projects; preserved 8.5A_TESTING (gold-standard), StakeoutTest (secondary), Kimley Marketing (real client name kept per user judgement, no fixture data).
+
+**Discovered, deferred to Stage 13:**
+
+- `user_profiles.role` lacks a CHECK constraint — accepts any string.
+- 3 remaining `Sandbox Master *` policies on `stakeout_*_points` / time / consumables tables (already in Known Bugs as deferred pre-pilot security).
+- Orphaned `assigned_to = c340c25a-5f8e-4445-8bef-8452c00a7a27` (deleted user) on Project1_Test and Verrado_260330 — both now archived, off active surfaces.
+- Dead-file confirmation: `TodaysWork.jsx`, `MobileCrewView.jsx` are unreachable for `field_crew` users — registered in office Routes block which crew roles bypass via `App.jsx:345-363`. Already in the dead-file cleanup list.
+- Assignment-level `client_contact_name` and `client_contact_phone` columns (Migration 13) are now duplicated by project-level columns added in Migration 20 — should migrate any assignment-level data up to project and drop the assignment columns.
+
+**Discovered, deferred to Stage 14:**
+
+- **Dispatch / CrewToday architectural gap.** Dispatch Matrix writes to `projects.assigned_to` and `projects.assigned_crew`; CrewToday + CrewUpcoming read from `stakeout_assignments.party_chief_id`. The two surfaces operate on different tables. Pre-Stakeout-QC, dispatch chief flow worked because chief surfaces queried `projects` directly. Post-Stakeout-QC, the new architecture left dispatch behind. Andrew has zero `stakeout_assignments` rows because dispatch never creates them — confirmed via diagnostic SQL during Step 0 + post-Migration-21 audit. This is the architectural gap Stage 14's `assignments` generalization is designed to resolve.
+- **Potential RLS gap (no current victims).** `Field roles read firm projects` policy doesn't allow read when user is `party_chief_id` on an assignment whose project's `assigned_to` is a different user. Currently zero misalignment victims (Andrew diagnostic returned zero rows). Policy expansion (additive OR clause checking `party_chief_id` on assignments under that project) should land when Stage 14 unifies the assignment model.
+
+**Open for next session:** Stage 12.1.7 — Stitch polish + functional integrations. Foundation is correct; build on it. The original "Revised Staging" table below is intentionally NOT updated this session — leave the staging-table edit for the next planning conversation per protocol.
+
+**Commits this session (7 total, `33e3419..6a529ab`):**
+- `d0b89ef` Migration 20 schema sync
+- `c7b477a` Migration 20a backfill
+- `14eb13c` Migration 21 RLS hardening
+- `d0cb8d6` Migration 22 party_chief write whitelist
+- `908c6c2` Migration 23 qc_points CASCADE fix
+- `a611100` Step 6 code updates (LicensedPmDashboard, DeploymentModal, comments)
+- `6a529ab` Step 7 test data hygiene
+- `<journal>` this entry
+
+---
 
 ### 2026-04-28 — Audit + Replan (NO CODE SHIPPED)
 
