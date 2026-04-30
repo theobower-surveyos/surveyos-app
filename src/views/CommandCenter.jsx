@@ -63,6 +63,149 @@ const inputStyle = {
   padding: '12px', borderRadius: '8px', color: '#fff', outline: 'none', boxSizing: 'border-box',
 };
 
+// ── Recent Invoices ────────────────────────────────────────────────
+// Status pill styling — instrument feel (3px radius, mono caps,
+// transparent fill, accent-colored 1px border + text). This pattern
+// is intentionally local to RecentInvoicesPanel for now; Stage 12.1.7
+// later sessions will lift it to a shared phase-aware status pill.
+const INVOICE_PILL_STYLES = {
+  PAID:    { color: 'var(--brand-teal-light)' },
+  SENT:    { color: 'var(--text-main)' },
+  OVERDUE: { color: 'var(--brand-amber)' },
+  DRAFT:   { color: 'var(--text-muted)' },
+};
+
+function formatInvoiceUSD(amount) {
+  const n = Number(amount);
+  if (!Number.isFinite(n)) return '—';
+  return n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+}
+
+function InvoiceStatusPill({ status }) {
+  const norm = (status || '').toString().toUpperCase();
+  const style = INVOICE_PILL_STYLES[norm] || INVOICE_PILL_STYLES.DRAFT;
+  return (
+    <span style={{
+      display: 'inline-block',
+      padding: '3px 8px',
+      borderRadius: '3px',
+      border: `1px solid ${style.color}`,
+      color: style.color,
+      backgroundColor: 'transparent',
+      fontFamily: "'JetBrains Mono', monospace",
+      fontSize: '0.62em',
+      fontWeight: 700,
+      letterSpacing: '0.08em',
+      textTransform: 'uppercase',
+      whiteSpace: 'nowrap',
+    }}>
+      {norm || 'DRAFT'}
+    </span>
+  );
+}
+
+function RecentInvoicesPanel({ invoices, loading, error, onOpenProject }) {
+  const sectionStyle = {
+    backgroundColor: 'var(--bg-surface)',
+    border: '1px solid var(--border-subtle)',
+    borderRadius: '12px',
+    overflow: 'hidden',
+  };
+  const headerStyle = {
+    padding: '14px 16px',
+    borderBottom: '1px solid var(--border-subtle)',
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: '0.72em',
+    fontWeight: 700,
+    letterSpacing: '0.08em',
+    color: 'var(--text-muted)',
+    textTransform: 'uppercase',
+  };
+  const rowStyle = (isLast) => ({
+    padding: '12px 16px',
+    borderBottom: isLast ? 'none' : '1px solid var(--border-subtle)',
+    cursor: 'pointer',
+    transition: 'background-color 0.15s',
+  });
+
+  let body;
+  if (loading) {
+    body = (
+      <div>
+        {[0, 1, 2, 3, 4].map((i) => (
+          <div key={i} style={rowStyle(i === 4)}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <div style={{ height: '12px', width: '55%', backgroundColor: 'var(--border-subtle)', borderRadius: '3px' }} />
+              <div style={{ height: '12px', width: '20%', backgroundColor: 'var(--border-subtle)', borderRadius: '3px' }} />
+            </div>
+            <div style={{ height: '14px', width: '60px', backgroundColor: 'var(--border-subtle)', borderRadius: '3px' }} />
+          </div>
+        ))}
+      </div>
+    );
+  } else if (error) {
+    body = (
+      <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85em' }}>
+        Unable to load invoices.
+      </div>
+    );
+  } else if (!invoices || invoices.length === 0) {
+    body = (
+      <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85em', fontStyle: 'italic' }}>
+        No invoices yet.
+      </div>
+    );
+  } else {
+    body = (
+      <div>
+        {invoices.map((proj, idx) => {
+          const isLast = idx === invoices.length - 1;
+          return (
+            <div
+              key={proj.id}
+              onClick={() => onOpenProject && onOpenProject(proj)}
+              style={rowStyle(isLast)}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.03)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '12px', marginBottom: '6px' }}>
+                <strong style={{
+                  flex: 1,
+                  minWidth: 0,
+                  fontSize: '0.9em',
+                  color: 'var(--text-main)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}>
+                  {proj.project_name || 'Untitled project'}
+                </strong>
+                <span className="coordinate-data" style={{
+                  fontSize: '0.85em',
+                  fontWeight: 700,
+                  color: 'var(--text-main)',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {formatInvoiceUSD(proj.invoice_amount)}
+                </span>
+              </div>
+              <InvoiceStatusPill status={proj.invoice_status} />
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  return (
+    <div style={sectionStyle}>
+      <div style={headerStyle}>Recent Invoices</div>
+      {body}
+    </div>
+  );
+}
+
 export default function CommandCenter({ profile, projects, teamMembers, onProjectSelect, onCreateProject, onArchiveProject, onProjectUpdate }) {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
@@ -87,7 +230,35 @@ export default function CommandCenter({ profile, projects, teamMembers, onProjec
   const [activeTab, setActiveTab] = useState('operations');
   const [teamRoster, setTeamRoster] = useState([]);
 
-  useEffect(() => { fetchTeam(); }, []);
+  // Recent Invoices (Stage 12.1.7 — Session 1)
+  // RLS-scoped via Migration 21 "Office roles manage firm projects" — no
+  // client-side firm_id filter needed. Filter on the four display statuses
+  // because invoice_status defaults to 'unbilled' (Migration 20), so a NOT
+  // NULL filter would surface every project.
+  const [recentInvoices, setRecentInvoices] = useState([]);
+  const [invoicesLoading, setInvoicesLoading] = useState(true);
+  const [invoicesError, setInvoicesError] = useState(false);
+
+  useEffect(() => { fetchTeam(); fetchRecentInvoices(); }, []);
+
+  const fetchRecentInvoices = async () => {
+    setInvoicesLoading(true);
+    setInvoicesError(false);
+    const { data, error } = await supabase
+      .from('projects')
+      .select('*')
+      .in('invoice_status', ['paid', 'sent', 'overdue', 'draft'])
+      .order('updated_at', { ascending: false })
+      .limit(5);
+    if (error) {
+      console.error('[RecentInvoices] query failed:', error);
+      setInvoicesError(true);
+      setRecentInvoices([]);
+    } else {
+      setRecentInvoices(data || []);
+    }
+    setInvoicesLoading(false);
+  };
 
   const fetchTeam = async () => {
     const { data, error } = await supabase.from('user_profiles').select('id, first_name, last_name, email, role').eq('firm_id', profile?.firm_id);
@@ -178,7 +349,10 @@ export default function CommandCenter({ profile, projects, teamMembers, onProjec
 
         {/* ══════════ THE DESKTOP GRID FIX ══════════ */}
         <div className="desktop-grid">
-          
+
+          {/* LEFT COLUMN — MAP + RECENT INVOICES */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+
           {/* GOD'S EYE MAP */}
           <div style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)', height: '600px' }}>
             <MapContainer center={MAP_CENTER} zoom={MAP_ZOOM} scrollWheelZoom={true} style={{ height: '100%', width: '100%', zIndex: 1 }}>
@@ -198,6 +372,16 @@ export default function CommandCenter({ profile, projects, teamMembers, onProjec
                 );
               })}
             </MapContainer>
+          </div>
+
+          {/* RECENT INVOICES */}
+          <RecentInvoicesPanel
+            invoices={recentInvoices}
+            loading={invoicesLoading}
+            error={invoicesError}
+            onOpenProject={setDrawerProject}
+          />
+
           </div>
 
           {/* PROJECT LIST */}

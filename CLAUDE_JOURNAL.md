@@ -10,23 +10,21 @@
 
 ---
 
-## ⚠️ READ THIS FIRST IF STARTING A NEW SESSION (2026-04-28)
+## ⚠️ READ THIS FIRST IF STARTING A NEW SESSION (2026-04-29)
 
-**Update — late 2026-04-28:** Stage 12.1.5 has now shipped (7 commits ahead of `33e3419`). All six migration files applied, code updates landed, test data archived to three survivors. See **"2026-04-28 — Stage 12.1.5 Shipped"** entry under `## Session Log` for the full picture and decisions. The audit context below is preserved as history. Next session: Stage 12.1.7 (Stitch polish + functional integrations) — foundation is correct, build on it.
+**Latest update — 2026-04-29 (evening):** Stage 12.1.7 Session 1 shipped — real Recent Invoices section below the map on CommandCenter, RLS-scoped query, status pills (PAID / SENT / OVERDUE / DRAFT), DispatchProjectDrawer wired on row click. Browser smoke test still pending. See **"2026-04-29 (evening) — Stage 12.1.7 Session 1"** entry under `## Session Log`.
 
----
+**Earlier 2026-04-29:** UI audit session via Google Stitch. No code. Canonical project terminology locked: "Project" over "Deployment." Marketing page deferred to final 2-3 weeks. See **"2026-04-29 — Stitch UI Audit"** entry.
 
-**Tonight's session was an audit + replan, not a build session.** No code shipped. The audit revealed real foundational issues that change what comes next.
+**Latest shipped foundation — 2026-04-28 (late):** Stage 12.1.5 — schema correctness pass. Six migrations applied (20, 20a, 21, 22, 23, 24), code updates landed, test data archived to three survivors. See **"2026-04-28 — Stage 12.1.5 Shipped"** entry.
 
-**Critical findings:**
-1. `projects.assigned_to` is semantically the **Party Chief**, not the Lead PM. Migration 19 (Stage 12.1) repurposed it for Licensed PM ownership, which conflicts with how DispatchBoard, DeploymentModal, and DispatchProjectDrawer all use it. The Licensed PM dashboard "works" only because test data has the same value in both meanings.
-2. **Schema drift on `projects` is real and confirmed** via SQL introspection. ~17 columns exist in production that aren't in any migration file. Production schema is the source of truth; migration files are out of sync.
-3. **`scope` is multi-select jsonb, not a project_type enum.** That's correct — real surveying projects span multiple scopes. Routing should derive from scope contents, not from a separate type field.
-4. **DispatchProjectDrawer is doing 4 personas' work in one component** and is the de-facto ProjectDetail page. It assumes "project = field deployment," which doesn't fit non-staking project types (boundary, ALTA, topo, etc.).
-5. **`stakeout_assignments` already has clean naming** (`party_chief_id`, not `assigned_to`). The semantic confusion is local to the `projects` table.
-6. **RLS unrestricted** on `projects`, `user_profiles`, `firms`, several views. Pre-pilot security blocker.
+**Stage 12.1.7 in progress.** Session 1 (Recent Invoices) shipped. Next candidates: Active Projects by Type panel, financial header overhaul, map marker labels, phase-aware status pills.
 
-**Next session must start with Stage 12.1.5 (Schema Correctness Pass), not new features.** See "Revised Staging" section below. Don't ship 12.2 (financial snapshot), 12.3 (project nav), or any other feature work until 12.1.5 lands.
+**Operating rules going forward:**
+- Don't ship features on top of incorrect schema or unrestricted RLS (12.1.5 closed this).
+- Polish-as-we-go during planned edits. Don't open files purely to polish.
+- Marketing page waits for final 2-3 weeks of pre-pilot.
+- Stakeout QC remains the category-defining capability. SurveyOS is the OS for ALL surveying work.
 
 ---
 
@@ -42,24 +40,24 @@ Fluent in the surveying domain — I've run the work, read the spec, staked the 
 
 ## What SurveyOS Is
 
-**Vertical SaaS — the operating system for ALL of small-firm land surveying.** Not just construction staking. Not just dispatch. The whole back office of a 3–20-person surveying firm.
+**Vertical SaaS — the operating system for ALL of small-firm land surveying.** Not just construction staking. Not just dispatch. The whole back office of a 3–50-person surveying firm.
 
 Project types span: boundary surveys, ALTA/NSPS, topographic, as-built, subdivision plat, easement, right-of-way, federal contracting, hydrographic, geodetic control, and construction staking. **Stakeout QC is one workflow within this — important and well-built — but not the center.** Drone/LiDAR complexity is deferred until customers explicitly ask.
 
-**Current build status by capability:**
+**Current build status by capability (post-Stage 12.1.5):**
 
 | Capability | Maturity |
 |------------|----------|
 | Stakeout QC (chief flow + matcher + scoreboard + narratives) | Real — Stage 10/11 shipped |
 | Dispatch board (drag-drop matrix, PTO, multi-day spans) | Real — Stage 9 era, holding up |
-| DeploymentModal (project creation) | Real, but `priority` field silently dropped (no DB column) |
-| CommandCenter (financial dashboard, project list, map) | Real, but financial figures cite numbers that aren't real customer data |
+| DeploymentModal (project creation) | Real — Lead PM selector + priority field wired in 12.1.5 |
+| CommandCenter (financial dashboard, project list, map) | Real, but financial figures are simulated demo data, not real customers |
 | Crew app (chief mobile experience) | Real — clean, status-driven |
-| Licensed PM dashboard | Built on a flawed semantic foundation (see Critical Findings) |
+| Licensed PM dashboard | Filters by `lead_pm_id` correctly post-12.1.5 |
 | ProjectDetail page | Doesn't exist; DispatchProjectDrawer pulling triple duty |
 | Equipment, Team Roster, Client Portal | Mocked or shallow |
-| Schema correctness | Substantial drift; migrations out of sync with production |
-| Security (RLS) | Critical tables unrestricted |
+| Schema correctness | Drift captured in Migration 20 (12.1.5) |
+| Security (RLS) | Hardened on critical tables (Migration 21, 12.1.5) |
 
 **Wedge for sales:** invoicing + client portal + core PM. The AR-acceleration story (50-day DSO reduction) is the headline value prop for initial design-partner conversations. Stakeout QC is the category-defining capability that no current product (Trimble Access, Leica Captivate, TBC, Carlson) provides.
 
@@ -97,149 +95,195 @@ Project types span: boundary surveys, ALTA/NSPS, topographic, as-built, subdivis
 - **Migrations in `supabase/migrations/`** — numbered, versioned, descriptive names.
 - **Role-based routing in App.jsx:** `field_crew`/`party_chief` → CrewApp, all other authenticated → CommandCenter. No viewport-width check.
 - **SurveyOS owns its input formats.** SOS grammar is canonical; firms adopt or pay for custom parser. Apple-style opinionated default.
+- **Canonical project terminology: "Project" (not Deployment, not Job).** Use "Project" in user-facing copy across all surfaces. "Deployment" was internal SurveyOS vocabulary; "Job" was inconsistent with the schema. Locked 2026-04-29.
 
 ---
 
-## Revised Staging (As of 2026-04-28 Audit)
-
-The old linear roadmap (Stage 11 → 12 → 13) is no longer accurate. Tonight's audit revealed foundation issues that have to land before further feature work. Stage numbering preserved where possible; "12.1.5" inserted as a correctness half-step.
+## Revised Staging (As of 2026-04-29)
 
 | Stage | Description | Status |
 |-------|-------------|--------|
 | 1–10.4.5 | Schema, parser, matcher, CSV upload, scoreboard, field-fit | ✅ Shipped |
 | 11.1 | Claude-generated QC narratives (Edge Function + table) | ✅ Shipped (`9eb26ab`) |
 | 11.2 | Narrative regenerate UI + visual polish | ✅ Shipped (`8106f26`) |
-| 11.3 | MorningBrief integration of narratives | ⏸ Deferred — decide during Stage 12.1.5 review whether Phase 1 needs this |
-| 12.1 | Licensed PM dashboard scaffolding | ✅ Shipped (`71f400c`) — but built on `assigned_to` semantic flaw, fix in 12.1.5 |
+| 11.3 | MorningBrief integration of narratives | ⏸ Deferred — decide during 12.1.7 review |
+| 12.1 | Licensed PM dashboard scaffolding | ✅ Shipped (`71f400c`) — flawed, fixed in 12.1.5 |
 | 12.1.1 | LicensedPmDashboard query + routing fix | ✅ Shipped (`bc0ce16`) |
-| **12.1.5** | **Schema Correctness + Foundation Fix (NEW — START HERE)** | ⏳ **Next** |
-| 12.2 | Financial snapshot strip on Licensed PM dashboard | ⏳ After 12.1.5 |
-| 12.3 | ProjectDetail page (scope-aware) + nav from PM dashboard | ⏳ Requires Stage 14 (assignment generalization) — re-scope after 12.1.5 |
+| 12.1.5 | Schema correctness + foundation fix | ✅ Shipped (`33e3419..6a529ab`, 7 commits) |
+| **12.1.7** | **Stitch polish + functional integrations (NEXT)** | ⏳ **Next** |
+| 12.2 | Financial snapshot strip on Licensed PM dashboard | ⏳ After 12.1.7 |
+| 12.3 | ProjectDetail page (scope-aware) + nav from PM dashboard | ⏳ Requires Stage 14; re-scope after 12.1.7 |
 | 13 | Polish + testing backlog (UX issues, mobile fixes, terminology cleanup) | ⏳ Pending |
 | 14 | Project model generalization (`stakeout_assignments` → general `assignments`) | ⏳ Major architectural change; affects DispatchBoard's "project = deployment" assumption |
 | 15 | ProjectDetail page rebuild (depends on Stage 14) | ⏳ Pending |
 | 16 | Demo polish + onboarding flow + first-pilot prep | ⏳ Pending |
+| 17 | Marketing page + landing page (deferred to final 2-3 weeks) | ⏳ Wait until pilot-ready |
 
-**Rule going forward:** Don't ship features on top of incorrect schema or unrestricted RLS. Stage 12.1.5 first. Everything else follows.
-
----
-
-## Stage 12.1.5: Schema Correctness + Foundation Fix (DETAILED)
-
-This is the next stage. Lock in scope here so the next session can execute without re-deriving.
-
-### Migration 20: Schema Sync
-
-**Capture all columns drift on `projects`** (production has columns not in any migration file). Verified via `information_schema.columns` query on 2026-04-28:
-
-Columns in production that need to be migrated in:
-- `client_name text DEFAULT 'Internal'`
-- `budget_allocated numeric DEFAULT 0`
-- `budget_spent numeric DEFAULT 0`
-- `hours_estimated numeric DEFAULT 0`
-- `hours_actual numeric DEFAULT 0`
-- `crew_name text DEFAULT ''`
-- `scheduled_day text DEFAULT ''`
-- `started_at timestamptz`
-- `completed_at timestamptz`
-- `reviewed_at timestamptz`
-- `assigned_crew uuid[] DEFAULT '{}'`
-- `scheduled_end_date date`
-- `notes text`
-- `location text DEFAULT ''`
-- `hide_financials boolean`
-- `scope_checklist jsonb DEFAULT '[]'`
-- `scope jsonb DEFAULT '[]'`
-- `actual_start_time timestamptz`
-- `actual_end_time timestamptz`
-- `invoice_status text DEFAULT 'unbilled'`
-- `invoice_amount numeric DEFAULT 0`
-- `fee_type text`
-- `required_equipment jsonb`
-
-**New columns to add:**
-- `lead_pm_id uuid REFERENCES user_profiles(id)` — Licensed PM ownership (separate from Party Chief)
-- `address text` — DispatchProjectDrawer references this; either add or remove the references
-- `priority text DEFAULT 'standard'` — DeploymentModal sends this; currently dropped silently. Either add or remove from modal.
-
-**Audit other tables** for similar drift: `user_profiles`, `firms`, `stakeout_assignments`, `equipment`, `crew_unavailability`. Check each against its migration file. Capture drift in same migration if minor; separate migration if major.
-
-### Backfill: Lead PM vs Party Chief
-
-After Migration 20:
-- Set `lead_pm_id` on the 4 test projects currently misassigned via `assigned_to = maynard.id`
-- Restore `assigned_to` on those 4 projects to a real Party Chief value (Andrew, or unassigned if no chief was originally set)
-- Update `LicensedPmDashboard` query to filter by `lead_pm_id` instead of `assigned_to`
-- Add Lead PM selector to `DeploymentModal` (between Project Name and Party Chief)
-- Document `assigned_to` as Party Chief in code comments throughout
-
-### Migration 21: RLS Hardening
-
-Pre-pilot security must-fix. Tables/views currently unrestricted:
-- `projects` (cross-firm leak risk — most critical)
-- `user_profiles`
-- `firms` (cross-firm leak risk)
-- `crew_unavailability`
-- `permissions`
-- `crew_utilization` view
-- `stakeout_qc_summary` view
-
-Each needs RLS policies scoped by `firm_id`. Verify each table has `firm_id` for scoping (firms table itself is the exception — needs different scoping).
-
-### Migration 22: Tighten party_chief writes
-
-`party_chief` UPDATE permission on `stakeout_assignments` currently allows all-column writes. Tighten via DB trigger or RPC to whitelist: `status`, `submitted_at`, `chief_field_notes` only.
-
-### Migration 23: CASCADE bug fix
-
-Stage 7b.1 edit-points removes `stakeout_assignment_points` but doesn't cascade to `stakeout_qc_points`. Add ON DELETE CASCADE on the FK, or trigger that cleans up qc_points when assignment_points are removed.
-
-### Test data hygiene
-
-After migrations:
-- Rename test projects (DISP TEST2, FIELD_test, etc.) to clearer names or archive them
-- Confirm `8.5A_TESTING` remains the gold-standard fixture (488 design points + real QC data)
-- Ensure `assigned_to` only references field-eligible roles in test data
-
-### Code updates required by 12.1.5
-
-- `LicensedPmDashboard.jsx`: filter by `lead_pm_id`
-- `DeploymentModal.jsx`: add Lead PM selector, fix `priority` (add to migration or remove from form)
-- `DispatchProjectDrawer.jsx`: confirm `address` references resolve correctly post-migration
-- Code comment pass: document `assigned_to` semantics on `projects` table (Party Chief, not Lead PM)
-
-### Definition of done for Stage 12.1.5
-
-- [ ] Migration 20 applied; all production columns captured in migration files
-- [ ] Migration 21 applied; RLS active on projects, user_profiles, firms, views
-- [ ] Migration 22 applied; party_chief writes restricted
-- [ ] Migration 23 applied; qc_points CASCADE fixed
-- [ ] `lead_pm_id` populated on test projects; `assigned_to` reverted to Party Chief semantics
-- [ ] LicensedPmDashboard renders with correct filtering
-- [ ] DeploymentModal has Lead PM selector working
-- [ ] No silent `priority` drop on project create
-- [ ] Test data cleaned up
-- [ ] All commits pushed to `feature/stakeout-qc`
-
-This is roughly 2-3 days of focused Claude Code sessions. Maybe 4 separate stage commits. Each migration deserves its own commit.
+**Operating principle:** Polish-as-we-go for Stitch UI items during planned edits. If a Stitch item lives in a file already being touched for functional work, do the polish in the same commit. If it's in a different file, log it. Don't open files purely to polish.
 
 ---
 
-## Audit Findings (2026-04-28)
+## Stage 12.1.7: Stitch Polish + Functional Integrations (PLANNED)
+
+Foundation is correct (12.1.5 shipped). Next stage builds functional integrations on top while incrementally improving visual polish during the same edits.
+
+**Functional integration candidates** (pick based on session priority):
+
+1. **Real Recent Invoices section on CommandCenter** — uses existing `projects.invoice_status` and `projects.invoice_amount` columns; no schema work. Status pills (PAID / SENT / OVERDUE / DRAFT). Visible FinTech wedge demonstration.
+
+2. **Active Projects by Type panel on CommandCenter** — uses existing `projects.scope` jsonb. Horizontal bar list grouped by scope value. Communicates "OS for ALL surveying" message at a glance.
+
+3. **Improved financial header on CommandCenter** — replace current Revenue/Costs/Profit/Margin/Projects with surveyor-relevant metrics: Revenue YTD, WIP (Unbilled), AR > 30 Days, Crew Utilization. Bloomberg-grade signals owners actually scan for.
+
+4. **Map marker labels** — show crew + project ID on dispatch map markers. Highlight alert markers in amber. Uses existing project + assignment data.
+
+5. **Phase-aware status pills** — phase-aware terminology (FIELD WORK / IN QC / DRAFTING / READY FOR REVIEW / INVOICED / ARCHIVED) instead of generic SaaS statuses. May require status enum extension.
+
+**Stitch polish items to apply during the above edits:**
+
+- Hero stat treatment for QC scoreboards (1,204 in / 18 out — bigger numbers, dramatic)
+- Recent Shot Log pattern for AssignmentDetail (monospace coordinate columns + status icons)
+- Continuous multi-day span bars on dispatch matrix (vs. separate compact cards)
+- Crew row metadata on dispatch (truck designation, member count, certs)
+- Overtime / labor risk indicator on crew rows
+- Maintenance / training block visualization alongside PTO
+- Financial health bar per project card on Projects list view
+
+**What to skip:**
+- Anything on the Stakeout QC sidebar nav (Stitch missed this; SurveyOS keeps it as top-level)
+- Mon-Fri reduction (SurveyOS uses Mon-Sat — industry standard)
+- Generic sidebar terminology (keep Command Center / Stakeout QC / Dispatch Board / etc.)
+- Generic user identity ("sys_admin" etc.) — keep named operator personality
+- Removal of greeting line (keep "Good evening, theo")
+
+### Definition of done for Stage 12.1.7
+
+To be defined at session start. Likely 1-2 functional integrations (Recent Invoices + Active Projects by Type are the highest-leverage candidates) plus opportunistic polish on touched files.
+
+---
+
+## Stage 12.1.5: Schema Correctness + Foundation Fix (SHIPPED 2026-04-28)
+
+Reference doc preserved in case future schema work needs to revisit decisions.
+
+### Six migrations applied (idempotent against production):
+
+- **20** schema sync — captured 23 columns of drift on `projects` (IF NOT EXISTS, no-op against prod), added `lead_pm_id`, `address`, `priority`, `client_contact_name`, `client_contact_phone` on `projects`, `pm_site_notes` on `stakeout_assignments`, folded in 2-column drift on `user_profiles` (`certifications`, `assigned_equipment` text[]). Reversed Migration 19's `assigned_to` comment back to "Party Chief, NOT Licensed PM."
+- **20a** backfill — restored `assigned_to = Andrew` (Party Chief, field_crew) and set `lead_pm_id = Maynard` (Licensed PM, pm) on the four ex-Migration-19 projects. Corrected the 5th misassigned project surfaced during Step 0 (TEST_260402, theo as owner) to `assigned_to = NULL, lead_pm_id = theo`.
+- **21** RLS hardening — dropped `Sandbox Master Projects` and `Sandbox Master Profile Policy` (would have rendered RLS useless if simply enabled), dropped legacy inline-subquery policies, added `Office roles manage firm projects` (owner/admin/pm) and `Firm mates read profiles`, enabled RLS on `projects` and `user_profiles`, applied `security_invoker = true` to `crew_utilization` and `stakeout_qc_summary` views.
+- **22** party_chief write whitelist — BEFORE UPDATE trigger restricting chief writes (party_chief + field_crew) to `status, submitted_at, chief_field_notes` only. 25 column checks enumerated explicitly.
+- **23** qc_points CASCADE fix — AFTER DELETE trigger on `stakeout_assignment_points` cleans matching qc_points by composite key (no direct FK exists). Verified destructively on a StakeoutTest assignment (asgn 6→5, qc 6→5, target qc 1→0).
+- **24** test data archive — preserved 8.5A_TESTING (gold-standard fixture: 513 design pts, 488 asgn pts, 1 run, 6 qc pts), StakeoutTest (10 / 9 / 41 / 2 / 9), Kimley Marketing (real client name kept for future demo, no fixture data). Archived 15 sloppy fixtures.
+
+### Code updates:
+
+- `LicensedPmDashboard.jsx` — query filters `lead_pm_id` instead of `assigned_to`. Maynard's portfolio rendering verified via smoke test (4 backfilled projects appear).
+- `DeploymentModal.jsx` — Lead PM selector added. Filtered to `role IN ('owner','pm')`, firm-scoped via `teamMembers`. Defaults to current user when their role is owner/pm; otherwise explicit pick required (no chief is silently written into `lead_pm_id`). Priority swapped from 2-option toggle (standard/critical) to 3-option select (low/standard/high). Both fields persist into projects insert. Removed orphaned `Zap` import + `PriorityButton` sub-component.
+- `CommandCenter.jsx` — passes `profile` to DeploymentModal so Lead PM default can evaluate.
+- `App.jsx` — `handleCreateProject` now forwards `lead_pm_id` and `priority` from modal payload into projects insert. The wire that was previously silently dropping priority is now connected.
+- `DispatchBoard.jsx` — semantic comments at `getCrewId`, drag-drop handler, mobile assign/unschedule editor, and CrewAvatarStack header. `project?.address` references verified null-safe via existing `|| project?.location` fallback; no functional change.
+- `MorningBrief.jsx` — semantic comment at `getCrewId` helper.
+- Skipped `TodaysWork.jsx` and `EquipmentLogistics.jsx` per the rule — both reference `equipment.assigned_to` (text first-name string), not `projects.assigned_to`.
+
+### Discovered during 12.1.5, deferred to Stage 13:
+
+- `user_profiles.role` lacks a CHECK constraint — accepts any string.
+- 3 remaining `Sandbox Master *` policies on `stakeout_*_points` / time / consumables tables.
+- Orphaned `assigned_to = c340c25a-5f8e-4445-8bef-8452c00a7a27` (deleted user) on Project1_Test and Verrado_260330 — both now archived, off active surfaces.
+- Dead-file confirmation: `TodaysWork.jsx`, `MobileCrewView.jsx` are unreachable for `field_crew` users.
+- Assignment-level `client_contact_name` and `client_contact_phone` columns (Migration 13) are now duplicated by project-level columns added in Migration 20 — should migrate any assignment-level data up to project and drop the assignment columns.
+
+### Discovered during 12.1.5, deferred to Stage 14:
+
+- **Dispatch / CrewToday architectural gap.** Dispatch Matrix writes to `projects.assigned_to` and `projects.assigned_crew`; CrewToday + CrewUpcoming read from `stakeout_assignments.party_chief_id`. The two surfaces operate on different tables. Pre-Stakeout-QC, dispatch chief flow worked because chief surfaces queried `projects` directly. Post-Stakeout-QC, the new architecture left dispatch behind. Andrew has zero `stakeout_assignments` rows because dispatch never creates them — confirmed via diagnostic SQL during Step 0 + post-Migration-21 audit. This is the architectural gap Stage 14's `assignments` generalization is designed to resolve.
+- **Potential RLS gap (no current victims).** `Field roles read firm projects` policy doesn't allow read when user is `party_chief_id` on an assignment whose project's `assigned_to` is a different user. Currently zero misalignment victims (Andrew diagnostic returned zero rows). Policy expansion (additive OR clause checking `party_chief_id` on assignments under that project) should land when Stage 14 unifies the assignment model.
+
+### Decisions locked during 12.1.5:
+
+- Migration 22 trigger fires on `user_role IN ('party_chief', 'field_crew')` — restricts the chiefs that exist in production data.
+- Migration 23 used trigger approach (not FK CASCADE) because no direct FK exists between qc_points and assignment_points.
+- Migration 21 reused existing `get_my_firm_id()` instead of creating a duplicate.
+- **PM role has firm-wide project write access** via `Office roles manage firm projects` — Phase 1 acceptable for small firms (PMs cover for each other). **Phase 2 evolution: scope to `lead_pm_id = auth.uid()` OR explicit cross-PM permission, when multi-PM firms become paying customers.**
+- Lead PM selector defaults to current user only when `role IN ('owner', 'pm')`; otherwise explicit pick required.
+- Priority field exposed as 3-option select (low / standard / high) with `standard` as default.
+- Test data: archived 15 of 18 dev firm projects; preserved 8.5A_TESTING (gold-standard), StakeoutTest (secondary), Kimley Marketing.
+
+---
+
+## UI Audit Findings (2026-04-29 — Stitch Design Exercise)
+
+Used Google Stitch to generate alternative UI designs for SurveyOS. Reviewed against current build to identify polish wins worth porting. Tonight's session was audit only — no code shipped. Findings sorted into "steal these" (worth porting) and "keep ours" (don't regress).
+
+### Steal these from Stitch
+
+**CommandCenter:**
+- Replace generic financial header (Revenue/Costs/Profit/Margin/Projects) with surveyor-relevant metrics: Revenue YTD, WIP (Unbilled), AR > 30 Days, Crew Utilization
+- Add "Active Projects by Type" panel using `projects.scope` jsonb — horizontal bar list grouped by scope, communicates "OS for all surveying"
+- Add "Recent Invoices" section using `projects.invoice_status` and `projects.invoice_amount` — status pills (PAID / SENT / OVERDUE / DRAFT). Makes the FinTech wedge visible.
+- Add map marker labels (crew + project ID, alert highlights in amber)
+- Phase-aware status pills (ACTIVE / FIELD WORK / IN QC / DRAFTING / READY FOR REVIEW / INVOICED / ARCHIVED)
+
+**Dispatch Board:**
+- Crew row metadata: truck designation, member count, certifications (e.g., "UAV Cert")
+- Overtime / labor risk indicator on crew rows
+- Continuous multi-day project bars (vs. current separate compact cards)
+- Maintenance / training block visualization alongside PTO
+
+**Stakeout QC Detail (PM view):**
+- Hero stat treatment: large numbers (1,204 in-tolerance / 18 out-of-tolerance) front and center
+- Recent Shot Log table with monospace Northing/Easting/Elevation columns
+- Tolerance readout (H: 0.045 ft / V: 0.022 ft) anchored next to the stat
+- Slide-over panel pattern (consistent with existing drawer pattern)
+
+**Projects List:**
+- Phase-aware status pills (FIELD WORK / IN QC / DRAFTING)
+- Financial health bar per project card (uses existing `budget_allocated` / `budget_spent` / `invoice_amount`)
+- Type-based filter chips (uses `scope` jsonb)
+- Client name as primary card metadata
+
+### Keep ours, don't regress
+
+- Sidebar items with surveying-domain language (Command Center / Stakeout QC / Dispatch Board / etc.) — Stitch reverted to generic SaaS naming; don't follow
+- Greeting line ("Good evening, theo") — warmer than Stitch's "SYS STATUS: NOMINAL"
+- Operator footer with named user — Stitch shows "Owner Admin / sys_admin" which is colder
+- Active/Review/Done tab pattern on project list — useful workflow-state filtering Stitch dropped
+- Mon-Sat working week (Stitch dropped Saturday — incorrect for industry)
+- Drag-and-drop dispatch interaction (Stitch is static)
+- PTO with realtime + visual treatment
+- Equipment conflict detection
+- Mobile branch for dispatch (Stitch only designed desktop)
+
+### Universal Stitch misses
+
+- Stakeout QC missing from sidebar in every Stitch surface — Stitch doesn't grasp it as a top-level capability
+- No mobile crew experience designed at all — Stitch only built desktop surfaces
+- Generic user identity throughout
+- Mon-Fri working week instead of Mon-Sat
+
+### Implementation rules
+
+**Polish-as-we-go discipline:** During planned feature work in Stage 12.1.7+, if a Stitch polish item lives in a file you're already editing, apply it in the same commit. If it's in a different file, log it as a follow-up. Don't open files purely to polish — that's a time sink that delays shipping.
+
+**Don't half-implement:** If you commit to applying a Stitch polish item (e.g., financial strip overhaul), do the whole strip, not three of four metrics. Half-done UI ages worse than untouched legacy.
+
+**Schema-free stage:** All Stitch polish items above use existing schema columns. No new migrations required. The data already exists.
+
+---
+
+## Audit Findings (2026-04-28 — Surface + Schema Audit)
 
 Captured during a session that paused all builds to audit existing surfaces. Reviewed: CommandCenter, DeploymentModal, DispatchBoard, DispatchProjectDrawer, CrewApp, CrewAssignmentDetail, plus full schema introspection.
 
 ### Surface-by-surface findings
 
 **CommandCenter:**
-- ✅ Works: greeting header, tab toggle, search bar, financial header, map with pulsing markers, project list with active/review/done sub-tabs, "+ New Deployment" → DeploymentModal
+- ✅ Works: greeting header, tab toggle, search bar, financial header, map with pulsing markers, project list with active/review/done sub-tabs, "+ New Project" → DeploymentModal
 - ⚠️ Hollow: `onProjectSelect` prop destructured but never called; `isAdminOrOwner` actually includes `pm` role (misleading naming)
 - ❌ Wrong: two competing drawer patterns (DispatchProjectDrawer for project rows, IntelligenceDrawer for map markers) — code smell
 
 **DeploymentModal:**
-- ✅ Works: scope as multi-select array (correct semantics for real surveying); CSV upload to project-photos storage on dispatch; required-field gating
-- ⚠️ Hollow: CSV uploaded but no downstream parser into `stakeout_design_points` (separate flow handles design point import); no Lead PM field
-- ❌ Wrong: `priority` value sent to DB but no `priority` column exists — silent insert drop; `assigned_to` semantically Party Chief (correct here)
+- ✅ Works: scope as multi-select array (correct semantics for real surveying); CSV upload to project-photos storage on dispatch; required-field gating; Lead PM selector + priority field wired in 12.1.5
+- ⚠️ Hollow: CSV uploaded but no downstream parser into `stakeout_design_points` (separate flow handles design point import)
 
 **DispatchBoard + DispatchProjectDrawer:**
 - ✅ Works (matrix): drag-drop with optimistic updates, week/month views, multi-day spans, PTO with realtime + visual treatment, equipment conflict detection (with drag-preview occupancy), mobile branch (separate layout), drawer mode logic (active/review/archive)
@@ -253,17 +297,16 @@ Captured during a session that paused all builds to audit existing surfaces. Rev
 - ⚠️ Hollow: no photo capture on staking assignment (dispatch drawer has it; this doesn't); no equipment readout for chief; no `started_at` timestamp on assignment Start (parity gap with dispatch drawer)
 - ❌ Wrong: "reconciled" terminology lingers (Stage 13 cleanup known); no undo path from submitted state; submitted state has no action footer
 
-**LicensedPmDashboard (Stage 12.1):**
-- ✅ Works: greeting, projects list, narrative feed scaffolding, multi-query fetch (assignments → runs → narratives, joined in JS)
-- ❌ Wrong: filters by `assigned_to` thinking it means "Lead PM"; semantically wrong because `assigned_to` is Party Chief. Test data happens to have same id in both meanings, masking the issue.
+**LicensedPmDashboard (post-12.1.5):**
+- ✅ Works: greeting, projects list correctly filtered by `lead_pm_id`, narrative feed scaffolding, multi-query fetch (assignments → runs → narratives, joined in JS)
 
 ### Schema findings (from production introspection)
 
 Confirmed by SQL on 2026-04-28:
 
-**Drift on `projects`:** ~17 columns exist in production not in any migration file (see Stage 12.1.5 list above for full enumeration).
+**Drift on `projects`:** ~17 columns existed in production not in any migration file. Captured in Migration 20 (12.1.5).
 
-**`stakeout_assignments` uses correct naming:** `party_chief_id` (not `assigned_to`). The semantic confusion is **local to `projects` table only**, not propagated.
+**`stakeout_assignments` uses correct naming:** `party_chief_id` (not `assigned_to`). The semantic confusion was **local to `projects` table only**, not propagated.
 
 **`firms` has rich subscription/billing infrastructure** already: `subscription_tier`, `subscription_status`, `trial_ends_at`, `invoice_prefix`, `invoice_next_seq`, `default_payment_terms`, `default_tolerance_h`/`v`, `license_number`, `license_state`. Most not wired to UI yet.
 
@@ -292,39 +335,43 @@ Confirmed by SQL on 2026-04-28:
 
 ---
 
-## Backlog Reconciliation (2026-04-28)
+## Backlog Reconciliation (Updated 2026-04-29)
 
 Sorted into three buckets. Items move between buckets as priorities shift.
 
-### Pre-pilot must-fix (Stage 12.1.5 + Stage 13)
+### Pre-pilot must-fix (Stage 13 + remaining 12.x)
 
-**Schema correctness:**
-- Migration 20: capture schema drift on `projects`
-- Add `lead_pm_id`; backfill test data; update LicensedPmDashboard query
-- Resolve `priority` column gap (add or remove from modal)
-- Resolve `address` column gap (add or remove dispatch drawer references)
-- Audit drift on other tables (`user_profiles`, `firms`, `stakeout_assignments`, `equipment`, `crew_unavailability`)
-
-**Security:**
-- RLS hardening on `projects`, `user_profiles`, `firms`, `crew_unavailability`, `permissions`, views
-- Tighten `party_chief` UPDATE on `stakeout_assignments` (column whitelist)
-- Stage 7b.1 CASCADE bug (qc_points cleanup when assignment_points removed)
+**Schema correctness:** ✅ MOSTLY COMPLETE via 12.1.5
+- ✅ Migration 20: schema drift on `projects` captured
+- ✅ Migration 21: RLS active on critical tables
+- ✅ Migration 22: party_chief write whitelist
+- ✅ Migration 23: qc_points CASCADE
+- ⏳ `user_profiles.role` CHECK constraint
+- ⏳ Remaining `Sandbox Master *` policies on stakeout_*_points / time / consumables tables
+- ⏳ Drop duplicated assignment-level `client_contact_*` columns (Migration 13 cruft now superseded by project-level cols)
 
 **Stakeout QC completion:**
 - Real-data testing pass (chiefs uploading actual SOS-format CSVs from real projects)
 - Stage 10.5 (PM manual-match) — decide if Phase 1 needs it
 - Stage 11.3 (MorningBrief integration of narratives) — decide if Phase 1 needs it
 
-**Test data hygiene:**
-- Rename sloppy test projects (DISP TEST2, FIELD_test, etc.)
-- Archive dead test projects
-- Ensure `assigned_to` only references Party Chief-eligible roles
-
 ### Pre-demo polish (Stage 13)
+
+**Stitch polish (apply opportunistically during 12.1.7+):**
+- Improved CommandCenter financial strip (Revenue YTD / WIP / AR > 30 / Crew Utilization)
+- Active Projects by Type panel
+- Recent Invoices section with status pills
+- Map marker labels (crew + project ID, alert highlights)
+- Phase-aware status pills throughout
+- Hero stat treatment for QC scoreboards
+- Recent Shot Log table pattern for AssignmentDetail
+- Continuous multi-day span bars on dispatch
+- Crew row metadata (truck, member count, certs)
+- Financial health bar per project card on Projects list
 
 **Dispatch board:**
 - Network Ops deletion (file + nav + route — confirmed dead)
-- Test data cleanup visible to anyone clicking around
+- Test data cleanup visible to anyone clicking around (mostly done in 12.1.5)
 
 **Mobile UX:**
 - Bottom nav `env(safe-area-inset-bottom)` over-reserving
@@ -352,10 +399,20 @@ Sorted into three buckets. Items move between buckets as priorities shift.
 **Terminology:**
 - "Reconcile" → "Reviewed" migration (column + enum). Disruptive but clean.
 
+**Dead file cleanup:**
+- `src/views/NetworkOps.jsx` — confirmed dead Stage 8 PWA scaffolding
+- `src/views/LiveView.jsx` — likely Stage 8 dead
+- `src/views/FieldLogs.jsx` — possibly superseded by drawer's Field Log section
+- `src/views/ProfitAnalytics.jsx` — possibly mocked Stage 8 work
+- `src/views/EquipmentLogistics.jsx` — possibly the original Equipment page
+- `src/views/ProjectVault.jsx` AND `src/components/ProjectVault.jsx` — duplicate names, drift
+- `src/views/TodaysWork.jsx` — confirmed unreachable for field_crew users (per 12.1.5 audit)
+- `src/views/MobileCrewView.jsx` — same
+
 ### Phase 2 (post-pilot, real new work)
 
 **Architecture:**
-- Stage 14: Generalize `stakeout_assignments` → `assignments` for all project types
+- Stage 14: Generalize `stakeout_assignments` → `assignments` for all project types. Resolves Dispatch / CrewToday gap discovered in 12.1.5.
 - Stage 15: ProjectDetail page (scope-aware, replaces or supplements DispatchProjectDrawer)
 - Split DispatchProjectDrawer's 4 personas into focused surfaces
 - URL-based deep linking (chief assignment URLs, project URLs)
@@ -365,6 +422,7 @@ Sorted into three buckets. Items move between buckets as priorities shift.
 - Per-project budget tracking using `budget_allocated` / `budget_spent` (already in schema)
 - AssignmentBuilder CSV upload (PM exports daily staking points)
 - Scope checklist authoring (PM creates day-of items)
+- PM RLS scope evolution: `lead_pm_id = auth.uid()` OR explicit cross-PM permission, when multi-PM firms become paying customers (Phase 1 currently grants firm-wide PM project access)
 
 **Subscription / billing wiring:**
 - Wire `firms.subscription_*` columns to plan management surface
@@ -383,10 +441,7 @@ Sorted into three buckets. Items move between buckets as priorities shift.
 
 **Status enums:**
 - Convert text status columns (`projects.status`, `qc_points.h_status`/`v_status`/`built_on_status`) to Postgres enum types with CHECK constraints
-
-**Dead file cleanup:**
-- LiveView, FieldLogs, ProfitAnalytics, EquipmentLogistics, NetworkOps
-- ProjectVault (appears in BOTH `src/views/` AND `src/components/` — drift)
+- Add `user_profiles.role` CHECK constraint
 
 **Field experience:**
 - PDF attachment for plan sheets / easement docs (replacing the removed plan view)
@@ -404,6 +459,10 @@ Sorted into three buckets. Items move between buckets as priorities shift.
 **Firm-level customization:**
 - Firm-level feature code libraries (CSV upload + override layer)
 - Firm-level custom SOS parser for legacy as-staked formats (~2 days/firm)
+
+**Marketing / launch:**
+- Marketing page + landing page (Stage 17, deferred to final 2-3 weeks of pre-pilot)
+- Onboarding flow + first-pilot prep (Stage 16)
 
 ---
 
@@ -428,19 +487,21 @@ Sorted into three buckets. Items move between buckets as priorities shift.
 | 10.3.5 | Stakeout QC sidebar nav | ✅ Shipped (`b1152bd`) |
 | 10.4 | Chief QC scoreboard + field-fit UX | ✅ Shipped (`6746151`) |
 | 10.4.5 | Migration 17 + clean field-fit schema | ✅ Shipped (`52de61f`) |
-| 10.5 | PM manual-match | ⏸ Deferred — decide during 12.1.5 |
+| 10.5 | PM manual-match | ⏸ Deferred — decide during 12.1.7 |
 | 11.1 | Claude-generated QC narratives | ✅ Shipped (`9eb26ab`) |
 | 11.2 | Narrative regenerate UI + visual polish | ✅ Shipped (`8106f26`) |
-| 11.3 | MorningBrief integration | ⏸ Deferred — decide during 12.1.5 |
-| 12.1 | Licensed PM dashboard scaffolding | ✅ Shipped (`71f400c`) — flawed, fix in 12.1.5 |
+| 11.3 | MorningBrief integration | ⏸ Deferred — decide during 12.1.7 |
+| 12.1 | Licensed PM dashboard scaffolding | ✅ Shipped (`71f400c`) — flawed, fixed in 12.1.5 |
 | 12.1.1 | Routing + query fixes | ✅ Shipped (`bc0ce16`) |
-| **12.1.5** | **Schema correctness pass (NEW)** | ⏳ **NEXT** |
-| 12.2 | Financial snapshot strip | ⏳ After 12.1.5 |
-| 12.3 | ProjectDetail nav | ⏳ Re-scope after 12.1.5; depends on Stage 14 |
+| 12.1.5 | Schema correctness + foundation fix | ✅ Shipped (`33e3419..6a529ab`) |
+| **12.1.7** | **Stitch polish + functional integrations (NEXT)** | ⏳ **NEXT** |
+| 12.2 | Financial snapshot strip | ⏳ After 12.1.7 |
+| 12.3 | ProjectDetail nav | ⏳ Re-scope after 12.1.7; depends on Stage 14 |
 | 13 | Polish + testing backlog | ⏳ Pending |
 | 14 | Project model generalization | ⏳ Major architectural change |
 | 15 | ProjectDetail page rebuild | ⏳ After Stage 14 |
 | 16 | Demo polish + onboarding + first-pilot prep | ⏳ Pending |
+| 17 | Marketing + landing page | ⏳ Final 2-3 weeks of pre-pilot |
 
 ---
 
@@ -496,7 +557,7 @@ Field-fit reason codes: `OB` (Obstruction), `AC` (Access), `SA` (Safety), `CF` (
 
 Spec: `docs/sos-stake-code-standard.md`.
 
-### Stage 10 files (summary — see prior journal entries for full detail)
+### Stage 10 files (summary)
 
 Modules: `sosParser`, `sosMatcher`, `sosProcessRun`, `csvParser` (all in `src/lib/`).
 Migrations: 16 (qc_points columns + dropped legacy CHECKs), 17 (chief field-fit writes).
@@ -540,10 +601,13 @@ Hooks: `useCrewQcRun`.
 Deferred indefinitely. Build push when we know what real events to notify about.
 
 ### Stage 10.5 — PM manual-match + field-fit reconciliation UI
-Deferred. Field-fit is now chief-side flagged; PM gets that data automatically. Decide during Stage 12.1.5 whether Phase 1 needs the manual-match UI.
+Deferred. Field-fit is now chief-side flagged; PM gets that data automatically. Decide during Stage 12.1.7 whether Phase 1 needs the manual-match UI.
 
 ### Stage 11.3 — MorningBrief integration of narratives
-Deferred. Decide during Stage 12.1.5 whether Phase 1 needs this.
+Deferred. Decide during Stage 12.1.7 whether Phase 1 needs this.
+
+### Stage 17 — Marketing page + landing page
+Deferred to final 2-3 weeks of pre-pilot work. Marketing pages need product proof points, testimonials, and final positioning that don't exist yet. Premature to build.
 
 ---
 
@@ -564,10 +628,14 @@ Deferred. Decide during Stage 12.1.5 whether Phase 1 needs this.
 - **SurveyOS defines its own input formats** — SOS grammar, future per-firm custom parsers as paid implementations
 - **Adaptive Submit button visual weight** based on out_of_tol count
 - **Chief field-fit flagging is post-upload, in app** — never in code string
-- **`projects.assigned_to` is Party Chief, not Lead PM** — `lead_pm_id` will be added in 12.1.5 for Licensed PM ownership
+- **`projects.assigned_to` is Party Chief, not Lead PM** — `lead_pm_id` added in 12.1.5 for Licensed PM ownership
 - **`scope` is multi-select jsonb, not project_type enum** — UI behavior derives from scope contents
 - **Stakeout QC is one workflow within SurveyOS, not the center** — SurveyOS is the OS for ALL of small-firm surveying
 - **Real MRR is $0** — no real customers; all "design partner" figures were simulated demo data
+- **Canonical project terminology: "Project" (not Deployment, not Job)** — locked 2026-04-29
+- **Polish-as-we-go for UI improvements** — Stitch polish items applied opportunistically during planned feature edits, not in dedicated polish-only stages until Stage 13
+- **Marketing page deferred to final 2-3 weeks** — premature optimization until product is real
+- **PM role has firm-wide project write access** in Phase 1 — small-firm friendly; will scope to lead_pm_id-based when multi-PM firms become paying customers (Phase 2)
 
 ---
 
@@ -603,6 +671,11 @@ Deferred. Decide during Stage 12.1.5 whether Phase 1 needs this.
 - **Single column carrying two meanings is a bug, not a feature.** `projects.assigned_to` doing double duty as Party Chief AND Lead PM created Stage 12.1's flaw. Add a separate column rather than overload an existing one.
 - **One persona per detail surface.** DispatchProjectDrawer's 1500-line, 4-persona drawer is a code smell. CrewAssignmentDetail's focused 400-line surface is the model.
 - **Specs that already capture multi-select reality (like scope) shouldn't be replaced with single-select enums.** Real surveying projects span multiple scopes; the schema correctly represents this. Routing logic should consume the array, not require a separate type field.
+- **Sandbox RLS policies that grant ALL to authenticated can render RLS useless if simply enabled.** Drop them before adding restrictive policies, or the new policies provide no security.
+- **`SECURITY DEFINER` helper functions with locked search_path bypass RLS during execution.** Reuse them in policies instead of writing inline subqueries that risk RLS recursion.
+- **Composite-key cascade requires a trigger, not FK constraint.** When child table refers to parent by `(a, b)` rather than direct FK, ON DELETE CASCADE doesn't fire. Use AFTER DELETE trigger.
+- **Don't half-implement UI polish.** Half-done UI broadcasts "in transition" and creates inconsistency debt worse than untouched legacy. Either do the full surface or log it for later.
+- **Polish-as-we-go works only with the discipline NOT to open files purely to polish.** If touching for functional reason, polish in same commit. Otherwise log and move on.
 
 ---
 
@@ -612,24 +685,17 @@ Reviewed during Stage 10 scoping. **Patents not pursued during Phase 1.** Real m
 
 ---
 
-## PM Persona Gap (Phase 1.5) — Now Stage 12.1.5 Work
-
-Current PM-facing build targets scheduler/dispatch persona. Licensed PMs who own client relationships need role-scoped dashboards. Stage 12.1 built scaffolding but on a flawed `assigned_to` foundation. Stage 12.1.5 fixes the foundation; Stage 12.2 adds financial snapshot; Stage 12.3 (post-Stage-14) adds ProjectDetail navigation.
-
----
-
 ## Known Bugs / Tech Debt (Tracked for Stage 13)
 
-### Bugs
-- **[BUG]** Stage 7b.1 edit-points removes `stakeout_assignment_points` but CASCADE doesn't reach `stakeout_qc_points`. **→ Migration 23 in Stage 12.1.5.**
-- **[BUG]** DeploymentModal sends `priority: 'standard'` to `projects` table but no `priority` column exists. Silent insert drop. **→ Stage 12.1.5 resolution: add column or remove from form.**
-- **[BUG]** DispatchProjectDrawer references `project.address` but no `address` column exists on `projects`. Currently fallback-only. **→ Stage 12.1.5 resolution.**
+### Bugs (post-12.1.5)
+
 - **[BUG]** Mobile schedule editor in DispatchProjectDrawer doesn't preserve span length when start date changes (desktop drag uses `shiftSpan`; mobile editor doesn't).
 - **[BUG]** `EndOfDaySummary` modal uses `project.scope` (project-type categories) as "tasks completed today" — semantic miss.
 - **[BUG]** Stage 7a seeder may create observations for design points not in `assignment_points`.
-- **[BUG]** `LicensedPmDashboard` filters projects by `assigned_to` thinking it means Lead PM; actually means Party Chief. **→ Stage 12.1.5 fix via `lead_pm_id`.**
+- **[BUG]** Orphaned `assigned_to = c340c25a-5f8e-4445-8bef-8452c00a7a27` (deleted user) on Project1_Test and Verrado_260330 — both archived in 12.1.5, off active surfaces.
 
 ### Tech debt
+
 - **[TECH DEBT]** `AssignmentDetail.jsx` at ~1570 lines. `DesignPointsPlanView.jsx` at ~1500 lines. `DispatchProjectDrawer` (inside DispatchBoard.jsx) at ~1500 lines. Refactor candidates.
 - **[TECH DEBT]** `DispatchProjectDrawer` serves 4 personas in one component — split as part of Stage 14/15 ProjectDetail rebuild.
 - **[TECH DEBT]** Two Supabase client import patterns coexist (direct vs prop-drilled).
@@ -641,8 +707,11 @@ Current PM-facing build targets scheduler/dispatch persona. Licensed PMs who own
 - **[TECH DEBT]** `CommandCenter.isAdminOrOwner` includes `pm` role — misleading naming.
 - **[TECH DEBT]** `equipment.id` is `bigint`, everything else uuid. `equipment.assigned_to` is `text`, not uuid FK.
 - **[TECH DEBT]** Status columns are text, not Postgres enums. Typos won't error.
+- **[TECH DEBT]** `user_profiles.role` lacks a CHECK constraint — accepts any string.
+- **[TECH DEBT]** Assignment-level `client_contact_name` and `client_contact_phone` (Migration 13) duplicated by project-level columns added in Migration 20. Migrate up + drop assignment-level cols.
 
 ### Deferred UX/visual polish (Stage 13)
+
 - **[DEFERRED VISUAL]** Crew bottom nav has gap below tab buttons. `env(safe-area-inset-bottom)` over-reserving.
 - **[DEFERRED VISUAL]** Grid styling tiered-line evaluation
 - **[DEFERRED VISUAL]** Labels invisible at extreme zoom in Safari (sub-pixel text)
@@ -653,6 +722,7 @@ Current PM-facing build targets scheduler/dispatch persona. Licensed PMs who own
 - **[DEFERRED UX]** Submitted state in CrewAssignmentDetail has no action footer (Back button only via top nav)
 
 ### Deferred features (Stage 13 / Phase 2)
+
 - **[DEFERRED FEATURE]** "Export controls to CSV" button
 - **[DEFERRED FEATURE]** Project snapshot PNG export on chief submit (timesheet + disguised time log)
 - **[DEFERRED FEATURE]** PM-side scope checklist authoring in AssignmentBuilder
@@ -665,18 +735,20 @@ Current PM-facing build targets scheduler/dispatch persona. Licensed PMs who own
 - **[DEFERRED FEATURE]** Undo path from `submitted` state in CrewAssignmentDetail
 - **[DEFERRED FEATURE]** AssignmentBuilder CSV upload (PM exports daily staking points)
 
-### Deferred security (→ Stage 12.1.5 must-fix)
-- **[SECURITY MUST-FIX]** RLS unrestricted on: `projects`, `user_profiles`, `firms`, `crew_unavailability`, `permissions`, `crew_utilization` view, `stakeout_qc_summary` view.
-- **[SECURITY MUST-FIX]** `party_chief` UPDATE on `stakeout_assignments` allows all-column writes; tighten to `status + submitted_at + chief_field_notes` only.
-- **[DEFERRED SECURITY]** Sandbox RLS policies — `Sandbox Master` policies grant ALL to `authenticated`. Scope or remove before first paying pilot.
+### Deferred security
+
+- **[SECURITY DEFERRED]** 3 remaining `Sandbox Master *` policies on `stakeout_*_points` / time / consumables tables. Scope or remove before first paying pilot.
 
 ### Dead file cleanup (Stage 13)
+
 - `src/views/NetworkOps.jsx` — confirmed dead Stage 8 PWA scaffolding
 - `src/views/LiveView.jsx` — likely Stage 8 dead
 - `src/views/FieldLogs.jsx` — possibly superseded by drawer's Field Log section
 - `src/views/ProfitAnalytics.jsx` — possibly mocked Stage 8 work
 - `src/views/EquipmentLogistics.jsx` — possibly the original Equipment page
 - `src/views/ProjectVault.jsx` AND `src/components/ProjectVault.jsx` — duplicate names, drift
+- `src/views/TodaysWork.jsx` — confirmed unreachable for field_crew users
+- `src/views/MobileCrewView.jsx` — confirmed unreachable
 
 ---
 
@@ -695,6 +767,13 @@ Current PM-facing build targets scheduler/dispatch persona. Licensed PMs who own
 - **Real Equipment + Team Roster pages** — currently mocked
 - **Excel bidirectional sync**
 - **AI portfolio advisory**
+- **Per-PM RLS scoping** — replace firm-wide PM project access with `lead_pm_id = auth.uid()` OR explicit cross-PM permission, when multi-PM firms become paying customers
+
+---
+
+## PM Persona Gap (Resolved as of 12.1.5; Phase 2 evolution noted)
+
+Stage 12.1 built scaffolding on a flawed `assigned_to` foundation. Stage 12.1.5 fixed via `lead_pm_id` column + RLS hardening. Stage 12.2 (after 12.1.7) adds financial snapshot. Stage 12.3 (post-Stage-14) adds ProjectDetail navigation. Phase 2 evolution: scope PM project access from firm-wide to `lead_pm_id`-based when multi-PM firms become paying customers.
 
 ---
 
@@ -706,7 +785,7 @@ Current PM-facing build targets scheduler/dispatch persona. Licensed PMs who own
 
 ## AI Dev Workflow
 
-**Multi-tool architecture:** Claude web chat (strategy + prompt-writing), Claude Code CLI (autonomous coding), Gemini (research).
+**Multi-tool architecture:** Claude web chat (strategy + prompt-writing), Claude Code CLI (autonomous coding), Gemini (research), Google Stitch (UI design exploration).
 
 **Prompt discipline:** what to read first, what to deliver, specific constraints, explicit regression checks, report-when-done structure. One prompt = one paste; embedded code fences are instructions.
 
@@ -718,79 +797,105 @@ Current PM-facing build targets scheduler/dispatch persona. Licensed PMs who own
 
 **Options-then-recommendation for non-trivial decisions:** When suggesting an architectural decision, feature scoping, migration approach, UX pattern, or refactor strategy, present 2–4 options with explicit tradeoffs, then recommend one with reasoning. Mechanical execution is exempt — direct action is fine for known-shape edits.
 
+**UI design exploration via Stitch:** Use Google Stitch as a third-party design check for major surfaces. Run with explicit SurveyOS context (surveying-domain language, Stakeout QC as category-defining, Mon-Sat working week, named operator personality). Compare output to current build, identify "steal these" vs "keep ours" items, log polish work to apply opportunistically during planned edits.
+
 ---
 
 ## Session Log
+
+### 2026-04-29 (evening) — Stage 12.1.7 Session 1: Recent Invoices on CommandCenter
+
+**Goal:** First functional integration of Stage 12.1.7 — surface real invoice activity below the map in CommandCenter using existing `projects.invoice_status` and `projects.invoice_amount` columns. Visible FinTech wedge demonstration.
+
+**Shipped:**
+- New `RecentInvoicesPanel` + `InvoiceStatusPill` components, kept local to `src/views/CommandCenter.jsx` (the panel is consumer-page concern, not shared).
+- Restructured the `desktop-grid` left column into a flex column so Map + Recent Invoices share the 2fr column. Project list (right rail, 1fr) untouched.
+- Status pill pattern (mono caps, 3px radius, transparent fill, accent-colored 1px border + text) — instrument feel, not rounded SaaS pills. PAID → `--brand-teal-light`, SENT → `--text-main`, OVERDUE → `--brand-amber`, DRAFT → `--text-muted`.
+- Loading skeleton (5 muted bar rows), empty state ("No invoices yet."), error state ("Unable to load invoices.") with `console.error('[RecentInvoices] query failed:', error)`.
+- Click any row → existing `setDrawerProject` opens `DispatchProjectDrawer` (same handler the project list rows use).
+
+**Query (RLS-scoped via Migration 21, no client-side `firm_id` filter):**
+```js
+supabase
+  .from('projects')
+  .select('*')
+  .in('invoice_status', ['paid', 'sent', 'overdue', 'draft'])
+  .order('updated_at', { ascending: false })
+  .limit(5);
+```
+
+**Deviations from spec:**
+1. **Filter is `.in('invoice_status', [...])` rather than `IS NOT NULL`.** Migration 20 sets `invoice_status DEFAULT 'unbilled'` — every project has a non-null value, so `IS NOT NULL` would surface every row. Filtering on the four display statuses is the semantically correct read of "Recent Invoices."
+2. **Order by `updated_at DESC`.** No `invoice_date` column exists on `projects` (verified against Migrations 01 and 20). Spec authorized this fallback.
+3. **Section header typography matched local existing patterns** (mono caps, 0.72em, letter-spacing 0.08em, `--text-muted`) — there is no nearby "financial strip" with section labels in the current CommandCenter, so the header was sized to read consistently with the existing project-list segmented-control labels and the leaflet popup mono caption.
+
+**Verification:**
+- `npm run build` — clean, zero new warnings. Pre-existing papaparse dynamic-import notice and 500KB chunk-size hint unchanged.
+- Browser smoke test, drawer click-through, and live SQL readback could not be performed from headless context. Theo to verify on next browser session: (a) panel renders below map; (b) sandbox firm rows appear with correct formatting; (c) clicking a row opens DispatchProjectDrawer with the correct project; (d) console clean.
+
+**Follow-ups logged:**
+- CommandCenter has no consistent section-header pattern above the map or the project list — only the leaflet popup uses a mono caption and the project list uses segmented-control buttons. When a future session opens this file again, consider unifying section headers (likely during Stage 12.1.7 financial-header overhaul). Not fixed in this commit per polish-as-we-go scope.
+- Status-pill pattern is intentionally local to `RecentInvoicesPanel`. Sequenced for promotion to a shared phase-aware status pill component when the next Stage 12.1.7 surface (project list rows, then dispatch cards) needs the same treatment.
+
+**Out of scope (untouched as planned):** financial header strip, Active Projects by Type panel, map marker labels, project list status pills, DispatchProjectDrawer internals, RLS, schema.
+
+---
+
+### 2026-04-29 — Stitch UI Audit (NO CODE SHIPPED)
+
+**What this session was:** Used Google Stitch to generate alternative UI designs for major SurveyOS surfaces (CommandCenter, Dispatch, Projects list, Project Detail with QC scoreboard). Reviewed against current build. Identified specific polish wins worth porting and patterns to keep.
+
+**Stitch v1 surfaces reviewed:**
+- CommandCenter
+- Dispatch Board (Weekly Dispatch Matrix)
+- Project Detail with QC scoreboard (slide-over panel pattern)
+- Projects list view
+
+**Key takeaways:**
+
+1. **Stitch's financial header is sharper than current.** Replace generic Revenue/Costs/Profit/Margin/Projects with Revenue YTD / WIP / AR > 30 Days / Crew Utilization. Bloomberg-grade signals owners actually care about.
+
+2. **"Active Projects by Type" panel is a strategic win.** Horizontal bar list grouped by `scope` jsonb. Communicates "OS for ALL surveying" at a glance — exactly the message Stage 12.1.5 audit revealed was missing.
+
+3. **Recent Invoices section makes the FinTech wedge visible.** Status pills (PAID / SENT / OVERDUE / DRAFT) using existing `invoice_status` and `invoice_amount` columns.
+
+4. **Hero stat treatment for QC scoreboards.** Big dramatic numbers (1,204 in / 18 out) with tolerance readout next to it. More visceral than current treatment.
+
+5. **Stitch missed Stakeout QC universally.** Across all surfaces, never put Stakeout QC in the sidebar nav. Prompt didn't emphasize it strongly enough; v2 prompt would correct this.
+
+6. **Stitch reverted to generic SaaS terminology** (Dashboard / Projects / Dispatch / Financials / Crew Management / Settings) when the prompt didn't pin specifics. Keep SurveyOS's surveying-domain sidebar.
+
+7. **Stitch designed only desktop surfaces.** No mobile crew app. v2 prompt would specify the field-first chief experience as a separate persona.
+
+**Decisions locked:**
+
+- **Canonical project terminology: "Project" (not "Deployment", not "Job").** Use across all user-facing copy.
+- **Polish-as-we-go strategy.** Apply Stitch polish items opportunistically during planned feature edits in Stage 12.1.7+. Don't open files purely to polish. Don't half-implement.
+- **Marketing page deferred to final 2-3 weeks of pre-pilot work** (Stage 17). Premature optimization until product is real and proof points exist.
+- **Stage 12.1.7 = Stitch polish + functional integrations.** Foundation correct (12.1.5 shipped), ready to build functional integrations on top while applying polish opportunistically.
+
+**Drafted but not used:**
+
+- Stitch v2 prompt (full ~1200-word brief with surveying-domain emphasis, Stakeout QC prominence, mobile crew persona, Mon-Sat week, named operator). Lives in chat history; can rerun in a fresh Stitch session if desired.
+- "Brief context" version for Grok / other LLM use. Lives in chat history.
+
+**No commits this session.** Audit and planning only.
+
+**Open for next session:** Stage 12.1.7. Pick functional integration target (highest-leverage candidates: Recent Invoices section + Active Projects by Type panel, both schema-free). Apply opportunistic Stitch polish on touched files. Marketing/landing page work waits for Stage 17.
+
+---
 
 ### 2026-04-28 — Stage 12.1.5 Shipped (Schema Correctness + Foundation Fix)
 
 **What this session was:** Executed the full Stage 12.1.5 plan from the earlier 2026-04-28 audit. Six numbered migration files (four schema/policy, two data-record) plus code updates and test-data hygiene. Foundation work complete; Phase 1 unblocked for Stage 12.1.7+ feature work.
 
-**Migrations applied (six numbered files; idempotent against production):**
+**Migrations applied:** See Stage 12.1.5 reference doc above for full breakdown of Migrations 20, 20a, 21, 22, 23, 24.
 
-- **20** schema sync — captured 23 columns of drift on `projects` (IF NOT EXISTS, no-op against prod), added `lead_pm_id`, `address`, `priority`, `client_contact_name`, `client_contact_phone` on `projects`, `pm_site_notes` on `stakeout_assignments`, folded in 2-column drift on `user_profiles` (`certifications`, `assigned_equipment` text[]). Reversed Migration 19's `assigned_to` comment back to "Party Chief, NOT Licensed PM."
-- **20a** backfill — restored `assigned_to = Andrew` (Party Chief, field_crew) and set `lead_pm_id = Maynard` (Licensed PM, pm) on the four ex-Migration-19 projects. Corrected the 5th misassigned project surfaced during Step 0 (TEST_260402, theo as owner) to `assigned_to = NULL, lead_pm_id = theo`.
-- **21** RLS hardening — dropped `Sandbox Master Projects` and `Sandbox Master Profile Policy` (would have rendered RLS useless if simply enabled), dropped legacy inline-subquery policies, added `Office roles manage firm projects` (owner/admin/pm) and `Firm mates read profiles`, enabled RLS on `projects` and `user_profiles`, applied `security_invoker = true` to `crew_utilization` and `stakeout_qc_summary` views.
-- **22** party_chief write whitelist — BEFORE UPDATE trigger restricting chief writes (party_chief + field_crew) to `status, submitted_at, chief_field_notes` only. 25 column checks enumerated explicitly.
-- **23** qc_points CASCADE fix — AFTER DELETE trigger on `stakeout_assignment_points` cleans matching qc_points by composite key (no direct FK exists). Verified destructively on a StakeoutTest assignment (asgn 6→5, qc 6→5, target qc 1→0).
-- **24** test data archive — preserved 8.5A_TESTING (gold-standard fixture: 513 design pts, 488 asgn pts, 1 run, 6 qc pts), StakeoutTest (10 / 9 / 41 / 2 / 9), Kimley Marketing (real client name kept for future demo, no fixture data). Archived 15 sloppy fixtures.
+**Manual UI verification:**
+- Lead PM dropdown rendering, role filter, firm scoping, default-to-current-user, and priority dropdown all confirmed via UI exercise. Throwaway project MODAL_TEST_DELETE_ME submitted cleanly with `lead_pm_id` populated by a real PM UUID and `priority='standard'`. Multi-PM firms first-class supported.
+- Edge Function regression test for Migration 21: theo regenerated narrative on 8.5A_TESTING / "8.5_TESTING" run; returned 200, body content changed (real Anthropic regeneration), zero RLS errors. Office-role auth context verified. Chief-side path deferred — Andrew has zero `stakeout_assignments` rows because dispatch never creates them; chief-side regression check waits on Stage 14.
 
-(The original audit predicted four migrations (20–23). 20a and 24 are data-only operations recorded as numbered migration files for git-history preservation, matching the project's established pattern from Migration 19. Not scope creep.)
-
-**Code updates:**
-
-- `LicensedPmDashboard.jsx` — query filters `lead_pm_id` instead of `assigned_to`. Maynard's portfolio rendering verified via smoke test (4 backfilled projects appear).
-- `DeploymentModal.jsx` — Lead PM selector added between Project Name and Location. Filtered to `role IN ('owner','pm')`, firm-scoped via `teamMembers` (already firm-filtered upstream). Defaults to current user when their role is owner/pm; otherwise explicit pick required (no chief is silently written into `lead_pm_id`). Priority swapped from 2-option toggle (standard/critical) to 3-option select (low/standard/high). Both fields persist into the projects insert. Removed orphaned `Zap` import + `PriorityButton` sub-component.
-- `CommandCenter.jsx` — passes `profile` to DeploymentModal so the Lead PM default can evaluate.
-- `App.jsx` — `handleCreateProject` now forwards `lead_pm_id` and `priority` from the modal payload into the projects insert. The wire that was previously silently dropping priority is now connected.
-- `DispatchBoard.jsx` — semantic comments at `getCrewId`, drag-drop handler, mobile assign/unschedule editor, and CrewAvatarStack header. `project?.address` references verified null-safe via existing `|| project?.location` fallback; no functional change.
-- `MorningBrief.jsx` — semantic comment at `getCrewId` helper.
-- Skipped `TodaysWork.jsx` and `EquipmentLogistics.jsx` per the rule — both reference `equipment.assigned_to` (text first-name string), not `projects.assigned_to`.
-
-**Manual UI verification (Step 6 + Step B):**
-
-- Lead PM dropdown rendering, role filter (`role IN ('owner','pm')`), firm scoping, default-to-current-user (theo as owner), and priority dropdown all confirmed via UI exercise. Throwaway project MODAL_TEST_DELETE_ME (later archived in Migration 24) submitted cleanly with `lead_pm_id` populated by a real PM UUID and `priority='standard'`. Multi-PM firms first-class supported.
-- Edge Function regression test for Migration 21: theo regenerated narrative on 8.5A_TESTING / "8.5_TESTING" run (run_id `e000ec1f-...`); returned 200, body content changed (real Anthropic regeneration, not a stale cache), zero RLS errors in console or Edge Function logs. **Office-role auth context verified.** Chief-side path (Andrew submitting fresh QC upload) deferred — Andrew has zero `stakeout_assignments` rows because dispatch never creates them; chief-side regression check waits on Stage 14.
-
-**Schema findings from Step 0 audit:**
-
-- Postgres 17.6 → `security_invoker` views fully supported (Migration 21 used it).
-- Production `user_profiles.role` data has only `field_crew`, `owner`, `pm` — no `party_chief`, `admin`, `cad`, `drafter`, `technician`, `licensed_pm`. CLAUDE.md's broader role list is aspirational. The `permissions` RBAC matrix references all 8 documented roles though, so the gap is on user-data side, not the matrix.
-- 23-column drift on `projects` matched the audit estimate verbatim. All captured idempotently in Migration 20.
-- 2-column drift on `user_profiles` (`certifications`, `assigned_equipment` text[]) — captured in Migration 20.
-- `equipment` is a whole-table drift (no migration creates it). Deferred to Stage 14 with the planned bigint→uuid + assigned_to text→uuid cleanup.
-- `firms` (22 cols) and `crew_unavailability` (8 cols) have zero drift relative to migrations.
-- `get_my_firm_id()` (Migration 01) is already `SECURITY DEFINER` with locked search_path — Migration 21 reused it instead of creating the prompt's proposed duplicate `user_firm_id()`. Existing helper bypasses RLS during execution, so no recursion risk in user_profiles policies.
-- **Five projects misassigned, not four as the audit journal stated.** TEST_260402 was the unstated 5th (assigned_to = theo, owner). Backfill corrected to `assigned_to = NULL, lead_pm_id = theo`.
-- `permissions` table has no `firm_id` column — it's a global RBAC matrix. Existing `auth.uid() IS NOT NULL` policy is correct; Migration 21 correctly skipped it.
-- Two `Sandbox Master *` policies on `projects` and `user_profiles` would have rendered RLS useless if simply enabled — caught and dropped at Migration 21. Three other `Sandbox Master *` policies remain on `stakeout_*_points` / time / consumables tables and are tracked as deferred pre-pilot security.
-- `user_profiles.role` has no CHECK constraint — accepts any string. Deferred to Stage 13.
-- `8.5A_TESTING` master `stakeout_design_points` count is 513 (vs. 488 listed in earlier journal entries). 488 is the assignment subset; 513 is the project-level master. Both correct.
-
-**Decisions locked:**
-
-- Migration 22 trigger fires on `user_role IN ('party_chief', 'field_crew')` — restricts the chiefs that exist in production data (Andrew = field_crew) rather than just the aspirational `party_chief` role.
-- Migration 23 used trigger approach (not FK CASCADE) because no direct FK exists between qc_points and assignment_points; relationship is composite (assignment_id + design_point_id).
-- Migration 21 reused existing `get_my_firm_id()` instead of creating the duplicate `user_firm_id()` from the prompt — existing helper is already SECURITY DEFINER, no recursion risk.
-- **PM role has firm-wide project write access** via `Office roles manage firm projects` — Phase 1 acceptable for small firms (PMs cover for each other). **Phase 2 evolution: scope to `lead_pm_id = auth.uid()` OR explicit cross-PM permission, when multi-PM firms become paying customers.**
-- Lead PM selector defaults to current user only when `role IN ('owner', 'pm')`; otherwise explicit pick required.
-- Priority field exposed as 3-option select (low / standard / high) with `standard` as default, matching the `priority text DEFAULT 'standard'` schema column.
-- Test data: archived 15 of 18 dev firm projects; preserved 8.5A_TESTING (gold-standard), StakeoutTest (secondary), Kimley Marketing (real client name kept per user judgement, no fixture data).
-
-**Discovered, deferred to Stage 13:**
-
-- `user_profiles.role` lacks a CHECK constraint — accepts any string.
-- 3 remaining `Sandbox Master *` policies on `stakeout_*_points` / time / consumables tables (already in Known Bugs as deferred pre-pilot security).
-- Orphaned `assigned_to = c340c25a-5f8e-4445-8bef-8452c00a7a27` (deleted user) on Project1_Test and Verrado_260330 — both now archived, off active surfaces.
-- Dead-file confirmation: `TodaysWork.jsx`, `MobileCrewView.jsx` are unreachable for `field_crew` users — registered in office Routes block which crew roles bypass via `App.jsx:345-363`. Already in the dead-file cleanup list.
-- Assignment-level `client_contact_name` and `client_contact_phone` columns (Migration 13) are now duplicated by project-level columns added in Migration 20 — should migrate any assignment-level data up to project and drop the assignment columns.
-
-**Discovered, deferred to Stage 14:**
-
-- **Dispatch / CrewToday architectural gap.** Dispatch Matrix writes to `projects.assigned_to` and `projects.assigned_crew`; CrewToday + CrewUpcoming read from `stakeout_assignments.party_chief_id`. The two surfaces operate on different tables. Pre-Stakeout-QC, dispatch chief flow worked because chief surfaces queried `projects` directly. Post-Stakeout-QC, the new architecture left dispatch behind. Andrew has zero `stakeout_assignments` rows because dispatch never creates them — confirmed via diagnostic SQL during Step 0 + post-Migration-21 audit. This is the architectural gap Stage 14's `assignments` generalization is designed to resolve.
-- **Potential RLS gap (no current victims).** `Field roles read firm projects` policy doesn't allow read when user is `party_chief_id` on an assignment whose project's `assigned_to` is a different user. Currently zero misalignment victims (Andrew diagnostic returned zero rows). Policy expansion (additive OR clause checking `party_chief_id` on assignments under that project) should land when Stage 14 unifies the assignment model.
-
-**Open for next session:** Stage 12.1.7 — Stitch polish + functional integrations. Foundation is correct; build on it. The original "Revised Staging" table below is intentionally NOT updated this session — leave the staging-table edit for the next planning conversation per protocol.
+**Schema findings from Step 0 audit:** See Stage 12.1.5 reference doc for full breakdown.
 
 **Commits this session (7 total, `33e3419..6a529ab`):**
 - `d0b89ef` Migration 20 schema sync
@@ -800,7 +905,6 @@ Current PM-facing build targets scheduler/dispatch persona. Licensed PMs who own
 - `908c6c2` Migration 23 qc_points CASCADE fix
 - `a611100` Step 6 code updates (LicensedPmDashboard, DeploymentModal, comments)
 - `6a529ab` Step 7 test data hygiene
-- `<journal>` this entry
 
 ---
 
@@ -815,37 +919,25 @@ Current PM-facing build targets scheduler/dispatch persona. Licensed PMs who own
 - CrewApp + CrewAssignmentDetail
 - LicensedPmDashboard (referenced from prior session)
 
-**Schema audited:**
-- Full `information_schema.columns` query on `projects`, `user_profiles`, `firms`, `stakeout_assignments`, `stakeout_design_points`, `stakeout_qc_runs`, `stakeout_qc_points`, `stakeout_qc_narratives`, `crew_unavailability`, `equipment`
+**Schema audited:** Full `information_schema.columns` query on `projects`, `user_profiles`, `firms`, `stakeout_assignments`, `stakeout_design_points`, `stakeout_qc_runs`, `stakeout_qc_points`, `stakeout_qc_narratives`, `crew_unavailability`, `equipment`.
 
 **Critical findings:**
-1. `projects.assigned_to` is the Party Chief column, not Lead PM. Stage 12.1 LicensedPmDashboard built on a semantic flaw — works on test data only because same id used for both meanings.
-2. ~17 columns drift on `projects` table — production has columns not in any migration file.
-3. `priority` value sent by DeploymentModal silently dropped (no DB column).
+1. `projects.assigned_to` is the Party Chief column, not Lead PM.
+2. ~17 columns drift on `projects` table.
+3. `priority` value sent by DeploymentModal silently dropped.
 4. `address` referenced by DispatchProjectDrawer; no DB column.
-5. RLS unrestricted on `projects`, `user_profiles`, `firms`, several views — pre-pilot blocker.
-6. `party_chief` UPDATE permission on `stakeout_assignments` too broad — pre-pilot blocker.
-7. DispatchProjectDrawer is 1500 lines doing 4 personas' work; assumes "project = field deployment" which doesn't fit non-staking project types.
-8. `scope` correctly multi-select; should drive UI routing rather than introducing project_type enum.
-9. `stakeout_assignments` already uses correct `party_chief_id` naming — semantic confusion is local to `projects`.
-10. `firms` has rich subscription/billing infrastructure already; mostly unwired.
+5. RLS unrestricted on critical tables.
+6. `party_chief` UPDATE permission too broad.
+7. DispatchProjectDrawer is 1500 lines doing 4 personas' work.
+8. `scope` correctly multi-select.
+9. `stakeout_assignments` already uses correct `party_chief_id` naming.
+10. `firms` has rich subscription/billing infrastructure already.
 
 **Decisions locked:**
 - Add `lead_pm_id` column for Licensed PM ownership; keep `assigned_to` as Party Chief.
 - Don't add `project_type` enum; use `scope` array contents to drive routing.
 - Generalize `stakeout_assignments` → `assignments` for all project types (Stage 14).
 - Stage 12.1.5 (Schema Correctness Pass) is the next stage. Don't ship features until it lands.
-
-**New staging:**
-- Stage 12.1.5: Schema correctness + RLS hardening + party_chief tightening + CASCADE bug fix + test data hygiene
-- Stage 12.2: Financial snapshot strip (after 12.1.5)
-- Stage 12.3: ProjectDetail nav (after Stage 14/15)
-- Stage 13: Polish backlog (terminology, mobile UX, dead files, etc.)
-- Stage 14: `assignments` generalization (major architectural change)
-- Stage 15: ProjectDetail page rebuild
-- Stage 16: Demo polish + onboarding + first-pilot prep
-
-**Open for next session:** Stage 12.1.5 — schema correctness pass. Migration 20 (drift capture + lead_pm_id + priority + address), Migration 21 (RLS), Migration 22 (party_chief writes), Migration 23 (CASCADE fix). Update LicensedPmDashboard query, DeploymentModal Lead PM selector, code comment pass on `assigned_to` semantics. Test data cleanup. Roughly 2-3 days of focused Claude Code sessions.
 
 **No commits this session.**
 
