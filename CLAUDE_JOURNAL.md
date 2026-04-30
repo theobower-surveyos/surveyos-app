@@ -12,19 +12,18 @@
 
 ## ⚠️ READ THIS FIRST IF STARTING A NEW SESSION (2026-04-29)
 
-**Latest update — 2026-04-29 (evening):** Stage 12.1.7 Session 1 shipped — real Recent Invoices section below the map on CommandCenter, RLS-scoped query, status pills (PAID / SENT / OVERDUE / DRAFT), DispatchProjectDrawer wired on row click. Browser smoke test still pending. See **"2026-04-29 (evening) — Stage 12.1.7 Session 1"** entry under `## Session Log`.
+**Latest update — 2026-04-29 (evening):** Stage 12.1.7 Session 1 shipped. Recent Invoices section added to CommandCenter. See **"2026-04-29 (evening) — Stage 12.1.7 Session 1 Shipped"** entry under `## Session Log`. Baseline tag `baseline/pre-polish-2026-04-29` created at `c6572f9` and pushed to GitHub before further polish work begins. Branch hygiene noted as a Stage 13 front-loaded task — see **"Stage 13 Branch Hygiene Runbook"** below.
 
-**Earlier 2026-04-29:** UI audit session via Google Stitch. No code. Canonical project terminology locked: "Project" over "Deployment." Marketing page deferred to final 2-3 weeks. See **"2026-04-29 — Stitch UI Audit"** entry.
+**Latest shipped work:** Stage 12.1.7 Session 1 — Recent Invoices on CommandCenter. Single commit `c6572f9` on `feature/stakeout-qc`. Component renders populated state (PAID/SENT/OVERDUE pills working), empty state, error state, loading state. Click handler reuses existing DispatchProjectDrawer trigger.
 
-**Latest shipped foundation — 2026-04-28 (late):** Stage 12.1.5 — schema correctness pass. Six migrations applied (20, 20a, 21, 22, 23, 24), code updates landed, test data archived to three survivors. See **"2026-04-28 — Stage 12.1.5 Shipped"** entry.
-
-**Stage 12.1.7 in progress.** Session 1 (Recent Invoices) shipped. Next candidates: Active Projects by Type panel, financial header overhaul, map marker labels, phase-aware status pills.
+**Next session:** Stage 12.1.7 Session 2 — Active Projects by Type panel on CommandCenter. Schema-free (uses existing `projects.scope` jsonb). Same surface, allows another opportunistic polish pass at section-header consistency.
 
 **Operating rules going forward:**
 - Don't ship features on top of incorrect schema or unrestricted RLS (12.1.5 closed this).
 - Polish-as-we-go during planned edits. Don't open files purely to polish.
 - Marketing page waits for final 2-3 weeks of pre-pilot.
 - Stakeout QC remains the category-defining capability. SurveyOS is the OS for ALL surveying work.
+- Tag a baseline before any major polish/architecture milestone (Stage 14, Stage 15, pre-pilot push). Cheap insurance.
 
 ---
 
@@ -51,7 +50,7 @@ Project types span: boundary surveys, ALTA/NSPS, topographic, as-built, subdivis
 | Stakeout QC (chief flow + matcher + scoreboard + narratives) | Real — Stage 10/11 shipped |
 | Dispatch board (drag-drop matrix, PTO, multi-day spans) | Real — Stage 9 era, holding up |
 | DeploymentModal (project creation) | Real — Lead PM selector + priority field wired in 12.1.5 |
-| CommandCenter (financial dashboard, project list, map) | Real, but financial figures are simulated demo data, not real customers |
+| CommandCenter (financial dashboard, project list, map) | Real, but financial figures are simulated demo data, not real customers. Recent Invoices section added 12.1.7 S1 |
 | Crew app (chief mobile experience) | Real — clean, status-driven |
 | Licensed PM dashboard | Filters by `lead_pm_id` correctly post-12.1.5 |
 | ProjectDetail page | Doesn't exist; DispatchProjectDrawer pulling triple duty |
@@ -110,10 +109,11 @@ Project types span: boundary surveys, ALTA/NSPS, topographic, as-built, subdivis
 | 12.1 | Licensed PM dashboard scaffolding | ✅ Shipped (`71f400c`) — flawed, fixed in 12.1.5 |
 | 12.1.1 | LicensedPmDashboard query + routing fix | ✅ Shipped (`bc0ce16`) |
 | 12.1.5 | Schema correctness + foundation fix | ✅ Shipped (`33e3419..6a529ab`, 7 commits) |
-| **12.1.7** | **Stitch polish + functional integrations (NEXT)** | ⏳ **Next** |
+| 12.1.7 S1 | Recent Invoices section on CommandCenter | ✅ Shipped (`c6572f9`) |
+| **12.1.7 S2** | **Active Projects by Type panel on CommandCenter (NEXT)** | ⏳ **Next** |
 | 12.2 | Financial snapshot strip on Licensed PM dashboard | ⏳ After 12.1.7 |
 | 12.3 | ProjectDetail page (scope-aware) + nav from PM dashboard | ⏳ Requires Stage 14; re-scope after 12.1.7 |
-| 13 | Polish + testing backlog (UX issues, mobile fixes, terminology cleanup) | ⏳ Pending |
+| 13 | Polish + testing backlog (UX issues, mobile fixes, terminology cleanup, branch hygiene) | ⏳ Pending |
 | 14 | Project model generalization (`stakeout_assignments` → general `assignments`) | ⏳ Major architectural change; affects DispatchBoard's "project = deployment" assumption |
 | 15 | ProjectDetail page rebuild (depends on Stage 14) | ⏳ Pending |
 | 16 | Demo polish + onboarding flow + first-pilot prep | ⏳ Pending |
@@ -123,21 +123,23 @@ Project types span: boundary surveys, ALTA/NSPS, topographic, as-built, subdivis
 
 ---
 
-## Stage 12.1.7: Stitch Polish + Functional Integrations (PLANNED)
+## Stage 12.1.7: Stitch Polish + Functional Integrations (IN PROGRESS)
 
-Foundation is correct (12.1.5 shipped). Next stage builds functional integrations on top while incrementally improving visual polish during the same edits.
+Foundation is correct (12.1.5 shipped). This stage builds functional integrations on top while incrementally improving visual polish during the same edits.
 
-**Functional integration candidates** (pick based on session priority):
+### Session 1 — SHIPPED 2026-04-29 (evening): Recent Invoices section
 
-1. **Real Recent Invoices section on CommandCenter** — uses existing `projects.invoice_status` and `projects.invoice_amount` columns; no schema work. Status pills (PAID / SENT / OVERDUE / DRAFT). Visible FinTech wedge demonstration.
+Single commit `c6572f9` on `feature/stakeout-qc`. See Session Log entry for details.
 
-2. **Active Projects by Type panel on CommandCenter** — uses existing `projects.scope` jsonb. Horizontal bar list grouped by scope value. Communicates "OS for ALL surveying" message at a glance.
+### Functional integration candidates remaining (pick based on session priority):
 
-3. **Improved financial header on CommandCenter** — replace current Revenue/Costs/Profit/Margin/Projects with surveyor-relevant metrics: Revenue YTD, WIP (Unbilled), AR > 30 Days, Crew Utilization. Bloomberg-grade signals owners actually scan for.
+1. **Active Projects by Type panel on CommandCenter** — uses existing `projects.scope` jsonb. Horizontal bar list grouped by scope value. Communicates "OS for ALL surveying" message at a glance. **Highest-leverage candidate for Session 2.**
 
-4. **Map marker labels** — show crew + project ID on dispatch map markers. Highlight alert markers in amber. Uses existing project + assignment data.
+2. **Improved financial header on CommandCenter** — replace current Revenue/Costs/Profit/Margin/Projects with surveyor-relevant metrics: Revenue YTD, WIP (Unbilled), AR > 30 Days, Crew Utilization. Bloomberg-grade signals owners actually scan for. **Will naturally relocate Recent Invoices to its eventual full-width position when this lands.**
 
-5. **Phase-aware status pills** — phase-aware terminology (FIELD WORK / IN QC / DRAFTING / READY FOR REVIEW / INVOICED / ARCHIVED) instead of generic SaaS statuses. May require status enum extension.
+3. **Map marker labels** — show crew + project ID on dispatch map markers. Highlight alert markers in amber. Uses existing project + assignment data.
+
+4. **Phase-aware status pills** — phase-aware terminology (FIELD WORK / IN QC / DRAFTING / READY FOR REVIEW / INVOICED / ARCHIVED) instead of generic SaaS statuses. Will lift the local Recent Invoices pill pattern to a shared component when this lands. May require status enum extension.
 
 **Stitch polish items to apply during the above edits:**
 
@@ -158,7 +160,62 @@ Foundation is correct (12.1.5 shipped). Next stage builds functional integration
 
 ### Definition of done for Stage 12.1.7
 
-To be defined at session start. Likely 1-2 functional integrations (Recent Invoices + Active Projects by Type are the highest-leverage candidates) plus opportunistic polish on touched files.
+To be defined at session start. Likely 2-3 functional integrations (Recent Invoices shipped Session 1; Active Projects by Type and financial-strip overhaul are the strongest remaining candidates) plus opportunistic polish on touched files.
+
+---
+
+## Stage 13 Branch Hygiene Runbook (planned)
+
+**Why this is needed.** `feature/stakeout-qc` was created as a feature branch for the Stakeout QC build (Stage 8 era). Stakeout QC shipped (Stages 10–11), but the branch was never merged back to `main`. Stage 12.1.5 (schema work) and Stage 12.1.7 Session 1 (Recent Invoices) both shipped onto the same feature branch despite not being StakeoutQC-scoped. The branch is now the de facto trunk; `main` is months behind. The misleading name and stale `main` are tech debt that compounds over time.
+
+**Status as of 2026-04-29:**
+- `main` is at the pre-Stakeout-QC state (last commit before Stage 11.1)
+- `feature/stakeout-qc` is the working branch, contains everything from Stage 11.1 forward through Stage 12.1.7 Session 1 (`c6572f9`)
+- `feature/stakeout-qc-85b-polish-wip` is an abandoned WIP branch from Stage 8.5b
+- Tag `baseline/pre-polish-2026-04-29` at `c6572f9` is pushed and durable
+
+**When to do this work.** Front-load it as the first task of Stage 13. Schedule for a morning session with at least 90 min of clean runway. Do not do this at end-of-session, late at night, or alongside other Stage 13 polish work. It's a focused mechanical task that benefits from fresh attention and earns nothing if rushed.
+
+**Estimated time:** 45 min – 1 hr without surprises. Add 30+ min if merge conflicts appear (unlikely since `main` hasn't moved since the branch diverged).
+
+**Pre-flight checks:**
+1. Working tree clean (`git status` returns nothing to commit)
+2. All recent work pushed (`git push origin feature/stakeout-qc` returns "up to date")
+3. `npm run build` passes
+4. The most recent baseline tag is in place and pushed
+
+**Procedure:**
+
+1. Sync local main with remote: `git checkout main && git pull origin main`
+2. Verify what's on main vs. feature: `git log --oneline main..feature/stakeout-qc | wc -l` (shows count of commits being merged in)
+3. Merge with `--no-ff` to preserve branch history: `git merge feature/stakeout-qc --no-ff -m "Merge feature/stakeout-qc into main: Stages 11–12.1.7 Session 1"`
+4. Resolve any conflicts (unlikely)
+5. Verify build still passes on merged main: `npm run build`
+6. Push main: `git push origin main`
+
+**Branch decision after merge — pick one:**
+
+- **Option A (recommended): rename feature branch to `develop`.** Continues to be the working trunk for ongoing Stage 12.1.7+ work. Commands: `git branch -m feature/stakeout-qc develop`, then `git push origin develop`, then `git push origin --delete feature/stakeout-qc`, then update upstream tracking with `git push --set-upstream origin develop`.
+
+- **Option B: delete feature branch, work directly on main going forward.** Simplest model for solo dev. Commands: `git checkout main && git branch -d feature/stakeout-qc && git push origin --delete feature/stakeout-qc`.
+
+- **Option C: keep feature branch, accept the misleading name.** Lowest effort, but the name remains tech debt. Not recommended.
+
+**Cleanup of abandoned branch:**
+- Delete `feature/stakeout-qc-85b-polish-wip` locally: `git branch -D feature/stakeout-qc-85b-polish-wip`
+- Delete remote: `git push origin --delete feature/stakeout-qc-85b-polish-wip`
+
+**Verify final state:**
+- `git branch -a` should show only `main` plus the chosen working branch (`develop` if Option A)
+- `git log main --oneline -5` should show recent shipped work
+- Tags survive branch operations — verify with `git tag -l`
+
+**Update journal post-merge:** add a "Stage 13 Branch Hygiene — Done" entry to Session Log noting the option taken and the new branch model.
+
+**Risks:**
+- Merge conflicts: low probability since `main` hasn't moved
+- GitHub branch protection on `main`: if enabled, the direct push fails and a PR is required (5 min friction, no functional issue)
+- Forgetting to push tags: tags don't push by default with `git push`. Run `git push origin --tags` after the merge to be safe.
 
 ---
 
@@ -219,7 +276,7 @@ Used Google Stitch to generate alternative UI designs for SurveyOS. Reviewed aga
 **CommandCenter:**
 - Replace generic financial header (Revenue/Costs/Profit/Margin/Projects) with surveyor-relevant metrics: Revenue YTD, WIP (Unbilled), AR > 30 Days, Crew Utilization
 - Add "Active Projects by Type" panel using `projects.scope` jsonb — horizontal bar list grouped by scope, communicates "OS for all surveying"
-- Add "Recent Invoices" section using `projects.invoice_status` and `projects.invoice_amount` — status pills (PAID / SENT / OVERDUE / DRAFT). Makes the FinTech wedge visible.
+- Add "Recent Invoices" section using `projects.invoice_status` and `projects.invoice_amount` — status pills (PAID / SENT / OVERDUE / DRAFT). Makes the FinTech wedge visible. ✅ Shipped 12.1.7 S1.
 - Add map marker labels (crew + project ID, alert highlights in amber)
 - Phase-aware status pills (ACTIVE / FIELD WORK / IN QC / DRAFTING / READY FOR REVIEW / INVOICED / ARCHIVED)
 
@@ -277,7 +334,7 @@ Captured during a session that paused all builds to audit existing surfaces. Rev
 ### Surface-by-surface findings
 
 **CommandCenter:**
-- ✅ Works: greeting header, tab toggle, search bar, financial header, map with pulsing markers, project list with active/review/done sub-tabs, "+ New Project" → DeploymentModal
+- ✅ Works: greeting header, tab toggle, search bar, financial header, map with pulsing markers, project list with active/review/done sub-tabs, "+ New Project" → DeploymentModal, Recent Invoices section (added 12.1.7 S1)
 - ⚠️ Hollow: `onProjectSelect` prop destructured but never called; `isAdminOrOwner` actually includes `pm` role (misleading naming)
 - ❌ Wrong: two competing drawer patterns (DispatchProjectDrawer for project rows, IntelligenceDrawer for map markers) — code smell
 
@@ -350,6 +407,8 @@ Sorted into three buckets. Items move between buckets as priorities shift.
 - ⏳ Remaining `Sandbox Master *` policies on stakeout_*_points / time / consumables tables
 - ⏳ Drop duplicated assignment-level `client_contact_*` columns (Migration 13 cruft now superseded by project-level cols)
 
+**Branch hygiene:** ⏳ Stage 13 front-loaded task. See Stage 13 Branch Hygiene Runbook above.
+
 **Stakeout QC completion:**
 - Real-data testing pass (chiefs uploading actual SOS-format CSVs from real projects)
 - Stage 10.5 (PM manual-match) — decide if Phase 1 needs it
@@ -358,11 +417,11 @@ Sorted into three buckets. Items move between buckets as priorities shift.
 ### Pre-demo polish (Stage 13)
 
 **Stitch polish (apply opportunistically during 12.1.7+):**
+- ✅ Recent Invoices section with status pills (12.1.7 S1)
 - Improved CommandCenter financial strip (Revenue YTD / WIP / AR > 30 / Crew Utilization)
 - Active Projects by Type panel
-- Recent Invoices section with status pills
 - Map marker labels (crew + project ID, alert highlights)
-- Phase-aware status pills throughout
+- Phase-aware status pills throughout (lift local Recent Invoices pill pattern to shared)
 - Hero stat treatment for QC scoreboards
 - Recent Shot Log table pattern for AssignmentDetail
 - Continuous multi-day span bars on dispatch
@@ -408,6 +467,7 @@ Sorted into three buckets. Items move between buckets as priorities shift.
 - `src/views/ProjectVault.jsx` AND `src/components/ProjectVault.jsx` — duplicate names, drift
 - `src/views/TodaysWork.jsx` — confirmed unreachable for field_crew users (per 12.1.5 audit)
 - `src/views/MobileCrewView.jsx` — same
+- `consumables_log.material` reference in some dead view — surfaced in 12.1.7 S1 console errors
 
 ### Phase 2 (post-pilot, real new work)
 
@@ -494,10 +554,11 @@ Sorted into three buckets. Items move between buckets as priorities shift.
 | 12.1 | Licensed PM dashboard scaffolding | ✅ Shipped (`71f400c`) — flawed, fixed in 12.1.5 |
 | 12.1.1 | Routing + query fixes | ✅ Shipped (`bc0ce16`) |
 | 12.1.5 | Schema correctness + foundation fix | ✅ Shipped (`33e3419..6a529ab`) |
-| **12.1.7** | **Stitch polish + functional integrations (NEXT)** | ⏳ **NEXT** |
+| 12.1.7 S1 | Recent Invoices on CommandCenter | ✅ Shipped (`c6572f9`) |
+| **12.1.7 S2** | **Active Projects by Type panel (NEXT)** | ⏳ **NEXT** |
 | 12.2 | Financial snapshot strip | ⏳ After 12.1.7 |
 | 12.3 | ProjectDetail nav | ⏳ Re-scope after 12.1.7; depends on Stage 14 |
-| 13 | Polish + testing backlog | ⏳ Pending |
+| 13 | Polish + testing backlog (incl. branch hygiene) | ⏳ Pending |
 | 14 | Project model generalization | ⏳ Major architectural change |
 | 15 | ProjectDetail page rebuild | ⏳ After Stage 14 |
 | 16 | Demo polish + onboarding + first-pilot prep | ⏳ Pending |
@@ -544,13 +605,11 @@ Chief submits → frontend fire-and-forget call to Edge Function `generate-qc-na
 Industry's existing as-staked code formats are parser-hostile. SurveyOS publishes its own canonical grammar; firms adopt for SurveyOS compatibility; legacy formats become per-firm Phase 2 custom parsers.
 
 Grammar:
-```
 <code> := <point_stake> | <line_stake> | <check_shot> | <control_check>
 <point_stake>    := <design_id> "-" <offset> "-" <stake_type>        e.g. 4007-5-HUB
 <line_stake>     := <design_id> ":" <design_id> "-" <offset> "-" <stake_type>  e.g. 4003:4002-11-NAIL
 <check_shot>     := <design_id> "-" "CHK"                             e.g. 4007-CHK
 <control_check>  := "CP" "-" "CHK"                                    e.g. CP-CHK
-```
 
 Stake types: `HUB, LATHE, NAIL, PK, MAG, PAINT, CP, WHISKER`.
 Field-fit reason codes: `OB` (Obstruction), `AC` (Access), `SA` (Safety), `CF` (Conflict), `OT` (Other).
@@ -636,6 +695,7 @@ Deferred to final 2-3 weeks of pre-pilot work. Marketing pages need product proo
 - **Polish-as-we-go for UI improvements** — Stitch polish items applied opportunistically during planned feature edits, not in dedicated polish-only stages until Stage 13
 - **Marketing page deferred to final 2-3 weeks** — premature optimization until product is real
 - **PM role has firm-wide project write access** in Phase 1 — small-firm friendly; will scope to lead_pm_id-based when multi-PM firms become paying customers (Phase 2)
+- **Tag a baseline before any major polish/architecture milestone** — `git tag -a baseline/<name>` is cheap insurance against UI/UX regressions you can't easily roll back
 
 ---
 
@@ -676,6 +736,9 @@ Deferred to final 2-3 weeks of pre-pilot work. Marketing pages need product proo
 - **Composite-key cascade requires a trigger, not FK constraint.** When child table refers to parent by `(a, b)` rather than direct FK, ON DELETE CASCADE doesn't fire. Use AFTER DELETE trigger.
 - **Don't half-implement UI polish.** Half-done UI broadcasts "in transition" and creates inconsistency debt worse than untouched legacy. Either do the full surface or log it for later.
 - **Polish-as-we-go works only with the discipline NOT to open files purely to polish.** If touching for functional reason, polish in same commit. Otherwise log and move on.
+- **Tag a baseline before any major polish/architecture milestone.** `git tag -a baseline/<name>` before Stage 14 (assignments generalization), Stage 15 (ProjectDetail rebuild), pre-pilot polish pushes, or any change that touches >5 files visually. Tags are free, durable, and let any future "I liked the old version of X" moment resolve via `git diff baseline/<name> -- <file>` instead of git archaeology. Push tags explicitly with `git push origin <tagname>` — `git push` does not push tags by default.
+- **Branch hygiene compounds.** A feature branch that doesn't get merged back becomes the de facto trunk over time. Stage 8 → Stage 12 was 4+ months on `feature/stakeout-qc` because no merge gate existed. Schedule branch hygiene at stage transitions, not as a side task.
+- **Schema field name mismatches surface at the SQL level, not the build level.** Claude Code can write a component that builds clean and runs against the wrong column name. The build passes; the component errors at runtime. `information_schema.columns` queries upfront prevent this. Always verify column names against the live schema, not against migration intent.
 
 ---
 
@@ -693,9 +756,12 @@ Reviewed during Stage 10 scoping. **Patents not pursued during Phase 1.** Real m
 - **[BUG]** `EndOfDaySummary` modal uses `project.scope` (project-type categories) as "tasks completed today" — semantic miss.
 - **[BUG]** Stage 7a seeder may create observations for design points not in `assignment_points`.
 - **[BUG]** Orphaned `assigned_to = c340c25a-5f8e-4445-8bef-8452c00a7a27` (deleted user) on Project1_Test and Verrado_260330 — both archived in 12.1.5, off active surfaces.
+- **[BUG]** Console error `column consumables_log.material does not exist` from a dead view (likely NetworkOps, FieldLogs, EquipmentLogistics, or similar). Surfaced during Stage 12.1.7 S1 smoke test. Logged to dead-file cleanup backlog.
 
 ### Tech debt
 
+- **[TECH DEBT]** `feature/stakeout-qc` branch is the de facto trunk despite the StakeoutQC-scoped name; `main` is stale. See Stage 13 Branch Hygiene Runbook for cleanup procedure.
+- **[TECH DEBT]** `feature/stakeout-qc-85b-polish-wip` is an abandoned branch from Stage 8.5b. Delete during Stage 13 branch hygiene.
 - **[TECH DEBT]** `AssignmentDetail.jsx` at ~1570 lines. `DesignPointsPlanView.jsx` at ~1500 lines. `DispatchProjectDrawer` (inside DispatchBoard.jsx) at ~1500 lines. Refactor candidates.
 - **[TECH DEBT]** `DispatchProjectDrawer` serves 4 personas in one component — split as part of Stage 14/15 ProjectDetail rebuild.
 - **[TECH DEBT]** Two Supabase client import patterns coexist (direct vs prop-drilled).
@@ -709,6 +775,7 @@ Reviewed during Stage 10 scoping. **Patents not pursued during Phase 1.** Real m
 - **[TECH DEBT]** Status columns are text, not Postgres enums. Typos won't error.
 - **[TECH DEBT]** `user_profiles.role` lacks a CHECK constraint — accepts any string.
 - **[TECH DEBT]** Assignment-level `client_contact_name` and `client_contact_phone` (Migration 13) duplicated by project-level columns added in Migration 20. Migrate up + drop assignment-level cols.
+- **[TECH DEBT]** Recent Invoices status pill pattern (Stage 12.1.7 S1) is intentionally local to RecentInvoicesPanel. Lift to a shared phase-aware status pill component when the next 12.1.7 surface needs the same pattern.
 
 ### Deferred UX/visual polish (Stage 13)
 
@@ -716,10 +783,12 @@ Reviewed during Stage 10 scoping. **Patents not pursued during Phase 1.** Real m
 - **[DEFERRED VISUAL]** Grid styling tiered-line evaluation
 - **[DEFERRED VISUAL]** Labels invisible at extreme zoom in Safari (sub-pixel text)
 - **[DEFERRED VISUAL]** QC narrative block needs more visual emphasis
+- **[DEFERRED VISUAL]** Recent Invoices placement (currently below map in left column) will move to its eventual full-width position when the financial-strip overhaul session ships.
 - **[DEFERRED UX]** Stacked points UX (control + check shots at same location)
 - **[DEFERRED UX]** "Controls off-view" indicator
 - **[DEFERRED UX]** Control points non-selectable for assignment
 - **[DEFERRED UX]** Submitted state in CrewAssignmentDetail has no action footer (Back button only via top nav)
+- **[DEFERRED UX]** Recent Invoices click opens DispatchProjectDrawer in dispatch-PM mode. For invoice-stage projects, the dispatch-shaped fields are largely irrelevant. Resolves naturally when Stage 15 ProjectDetail rebuild ships. Don't route invoice clicks elsewhere until then — every project entry point hits the same drawer.
 
 ### Deferred features (Stage 13 / Phase 2)
 
@@ -734,6 +803,7 @@ Reviewed during Stage 10 scoping. **Patents not pursued during Phase 1.** Real m
 - **[DEFERRED FEATURE]** Direction inference / confirmation UX for point-feature offsets
 - **[DEFERRED FEATURE]** Undo path from `submitted` state in CrewAssignmentDetail
 - **[DEFERRED FEATURE]** AssignmentBuilder CSV upload (PM exports daily staking points)
+- **[DEFERRED FEATURE]** "View All" affordance on Recent Invoices section (depends on Stage 15 ProjectDetail to have somewhere worth navigating to)
 
 ### Deferred security
 
@@ -749,6 +819,7 @@ Reviewed during Stage 10 scoping. **Patents not pursued during Phase 1.** Real m
 - `src/views/ProjectVault.jsx` AND `src/components/ProjectVault.jsx` — duplicate names, drift
 - `src/views/TodaysWork.jsx` — confirmed unreachable for field_crew users
 - `src/views/MobileCrewView.jsx` — confirmed unreachable
+- Whichever view references `consumables_log.material` (a column that doesn't exist) — surfaced as a console error during 12.1.7 S1
 
 ---
 
@@ -803,41 +874,34 @@ Stage 12.1 built scaffolding on a flawed `assigned_to` foundation. Stage 12.1.5 
 
 ## Session Log
 
-### 2026-04-29 (evening) — Stage 12.1.7 Session 1: Recent Invoices on CommandCenter
+### 2026-04-29 (evening) — Stage 12.1.7 Session 1 Shipped (Recent Invoices)
 
-**Goal:** First functional integration of Stage 12.1.7 — surface real invoice activity below the map in CommandCenter using existing `projects.invoice_status` and `projects.invoice_amount` columns. Visible FinTech wedge demonstration.
+**What shipped:** Recent Invoices section on CommandCenter. Single commit `c6572f9` on `feature/stakeout-qc`, pushed.
 
-**Shipped:**
-- New `RecentInvoicesPanel` + `InvoiceStatusPill` components, kept local to `src/views/CommandCenter.jsx` (the panel is consumer-page concern, not shared).
-- Restructured the `desktop-grid` left column into a flex column so Map + Recent Invoices share the 2fr column. Project list (right rail, 1fr) untouched.
-- Status pill pattern (mono caps, 3px radius, transparent fill, accent-colored 1px border + text) — instrument feel, not rounded SaaS pills. PAID → `--brand-teal-light`, SENT → `--text-main`, OVERDUE → `--brand-amber`, DRAFT → `--text-muted`.
-- Loading skeleton (5 muted bar rows), empty state ("No invoices yet."), error state ("Unable to load invoices.") with `console.error('[RecentInvoices] query failed:', error)`.
-- Click any row → existing `setDrawerProject` opens `DispatchProjectDrawer` (same handler the project list rows use).
+**Component:** `RecentInvoicesPanel` (defined inline in CommandCenter.jsx, lines ~107). Fetches 5 most recent projects where `invoice_status IN ('paid','sent','overdue','draft')`, ordered by `created_at DESC`. Renders project name (truncated), USD-formatted amount (right-aligned), and a status pill below in mono caps with semantic accent colors (PAID teal, SENT white, OVERDUE amber, DRAFT muted gray).
 
-**Query (RLS-scoped via Migration 21, no client-side `firm_id` filter):**
-```js
-supabase
-  .from('projects')
-  .select('*')
-  .in('invoice_status', ['paid', 'sent', 'overdue', 'draft'])
-  .order('updated_at', { ascending: false })
-  .limit(5);
-```
+**States verified:** populated state with three test rows (8.5A_TESTING $12,450 PAID, StakeoutTest $8,200 SENT, Kimley Marketing $4,750 OVERDUE), empty state ("No invoices yet."), loading skeleton, error state.
+
+**Click handler:** reuses `setDrawerProject` — same setter project list rows use to open DispatchProjectDrawer. Confirmed visually that clicking an invoice row opens the drawer with the matching project.
+
+**Polish applied opportunistically:** local instrument-feel pill pattern (3px radius, mono caps, transparent fill, accent-colored 1px border + text). Intentionally local to RecentInvoicesPanel for now; will be lifted to a shared phase-aware status pill component when the next 12.1.7 surface needs the same pattern.
 
 **Deviations from spec:**
-1. **Filter is `.in('invoice_status', [...])` rather than `IS NOT NULL`.** Migration 20 sets `invoice_status DEFAULT 'unbilled'` — every project has a non-null value, so `IS NOT NULL` would surface every row. Filtering on the four display statuses is the semantically correct read of "Recent Invoices."
-2. **Order by `updated_at DESC`.** No `invoice_date` column exists on `projects` (verified against Migrations 01 and 20). Spec authorized this fallback.
-3. **Section header typography matched local existing patterns** (mono caps, 0.72em, letter-spacing 0.08em, `--text-muted`) — there is no nearby "financial strip" with section labels in the current CommandCenter, so the header was sized to read consistently with the existing project-list segmented-control labels and the leaflet popup mono caption.
+- Filter is `.in('invoice_status', ['paid','sent','overdue','draft'])` instead of `IS NOT NULL`. Migration 20 sets `invoice_status DEFAULT 'unbilled'`, so `IS NOT NULL` would surface every project. The whitelist is the correct semantic.
+- Order by `created_at DESC` (`updated_at` doesn't exist on `projects`).
+- Section placement: deferred. Currently renders below the map in the left column. Will move to its eventual full-width position near the financial strip when the financial-strip overhaul session ships (planned 12.1.7 follow-up).
 
-**Verification:**
-- `npm run build` — clean, zero new warnings. Pre-existing papaparse dynamic-import notice and 500KB chunk-size hint unchanged.
-- Browser smoke test, drawer click-through, and live SQL readback could not be performed from headless context. Theo to verify on next browser session: (a) panel renders below map; (b) sandbox firm rows appear with correct formatting; (c) clicking a row opens DispatchProjectDrawer with the correct project; (d) console clean.
+**Pre-existing bug surfaced (not Session 1's responsibility):** console error `column consumables_log.material does not exist` from one of the dead views (likely NetworkOps, FieldLogs, EquipmentLogistics, or similar Stage 13 cleanup target). Logged to Stage 13 dead-file cleanup backlog.
 
-**Follow-ups logged:**
-- CommandCenter has no consistent section-header pattern above the map or the project list — only the leaflet popup uses a mono caption and the project list uses segmented-control buttons. When a future session opens this file again, consider unifying section headers (likely during Stage 12.1.7 financial-header overhaul). Not fixed in this commit per polish-as-we-go scope.
-- Status-pill pattern is intentionally local to `RecentInvoicesPanel`. Sequenced for promotion to a shared phase-aware status pill component when the next Stage 12.1.7 surface (project list rows, then dispatch cards) needs the same treatment.
+**UX gap surfaced (not Session 1's responsibility):** clicking a Recent Invoices row opens DispatchProjectDrawer in dispatch-PM mode (Crew/Equipment/Scope/Generate Invoice). For invoice-stage projects (Kimley Marketing, overdue), the dispatch-shaped fields are largely irrelevant. This is the existing app behavior — every project click on CommandCenter and every holding-queue card click on Dispatch Board lands in the same legacy drawer. Resolution path: Stage 14 (`assignments` generalization) retires the drawer's daily-scheduling role; Stage 15 (ProjectDetail rebuild) provides the scope-aware destination invoice clicks should eventually land on. Don't route invoice clicks elsewhere until Stage 15.
 
-**Out of scope (untouched as planned):** financial header strip, Active Projects by Type panel, map marker labels, project list status pills, DispatchProjectDrawer internals, RLS, schema.
+**Build pass:** `✓ built in 5.04s`, zero new warnings.
+
+**Baseline tag created:** `baseline/pre-polish-2026-04-29` at `c6572f9`, pushed to origin. Captures the UI/UX state before Stage 12.1.7 polish-as-we-go work begins to accumulate. Allows future `git diff baseline/pre-polish-2026-04-29 -- <file>` for any "I liked the old version" recovery without git archaeology.
+
+**Branch hygiene noted:** `feature/stakeout-qc` is the de facto trunk; `main` is stale. Stage 13 Branch Hygiene Runbook added to journal as a front-loaded Stage 13 task.
+
+**Next session opens with:** Stage 12.1.7 Session 2. Highest-leverage candidate is Active Projects by Type panel on CommandCenter (schema-free, uses existing `projects.scope` jsonb, communicates "OS for ALL surveying" message at a glance). Same surface as Session 1, allows section-header consistency polish in the same neighborhood.
 
 ---
 
@@ -857,7 +921,7 @@ supabase
 
 2. **"Active Projects by Type" panel is a strategic win.** Horizontal bar list grouped by `scope` jsonb. Communicates "OS for ALL surveying" at a glance — exactly the message Stage 12.1.5 audit revealed was missing.
 
-3. **Recent Invoices section makes the FinTech wedge visible.** Status pills (PAID / SENT / OVERDUE / DRAFT) using existing `invoice_status` and `invoice_amount` columns.
+3. **Recent Invoices section makes the FinTech wedge visible.** Status pills (PAID / SENT / OVERDUE / DRAFT) using existing `invoice_status` and `invoice_amount` columns. ✅ Shipped 12.1.7 S1.
 
 4. **Hero stat treatment for QC scoreboards.** Big dramatic numbers (1,204 in / 18 out) with tolerance readout next to it. More visceral than current treatment.
 
@@ -979,5 +1043,6 @@ When closing a chat session, before starting a new one, update this file with:
 6. **Key Design Decisions** — add any new locked decisions
 7. **Lessons Banked** — add any new technical insights
 8. **Pricing Framework** — update if tiers, add-ons, or strategy evolve
+9. **Baseline tag check** — if this session began a major polish/architecture milestone, confirm `baseline/<name>` was tagged before changes started. If not, tag the parent commit retroactively.
 
 Keep entries concise. Link to commits. Don't duplicate git-captured info; this is for intent, context, deferred decisions, relationship details. Commit the journal update alongside code changes.
