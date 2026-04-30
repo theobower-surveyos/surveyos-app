@@ -427,6 +427,7 @@ Sorted into three buckets. Items move between buckets as priorities shift.
 - Continuous multi-day span bars on dispatch
 - Crew row metadata (truck, member count, certs)
 - Financial health bar per project card on Projects list
+- Recent Invoices ordering signal — currently uses `created_at` which orders by project age, not invoice activity. Add `updated_at` global column or `invoice_updated_at` semantic column via migration to enable ordering by recent invoice changes. Surfaced during 12.1.7 S1 close.
 
 **Dispatch board:**
 - Network Ops deletion (file + nav + route — confirmed dead)
