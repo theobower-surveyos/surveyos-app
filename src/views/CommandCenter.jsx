@@ -248,7 +248,7 @@ export default function CommandCenter({ profile, projects, teamMembers, onProjec
       .from('projects')
       .select('*')
       .in('invoice_status', ['paid', 'sent', 'overdue', 'draft'])
-      .order('updated_at', { ascending: false })
+      .order('created_at', { ascending: false })
       .limit(5);
     if (error) {
       console.error('[RecentInvoices] query failed:', error);
