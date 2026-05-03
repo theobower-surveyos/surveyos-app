@@ -12,11 +12,11 @@
 
 ## ⚠️ READ THIS FIRST IF STARTING A NEW SESSION (2026-05-03)
 
-**Latest update — 2026-05-03:** Stage 12.1.7 Session 2 shipped. Active Projects by Type panel added to CommandCenter. See **"2026-05-03 — Stage 12.1.7 Session 2 Shipped"** entry under `## Session Log`. Three Stage 13 carry-forwards captured: (1) convert `projects.status` to a Postgres enum, (2) resolve dual-tracking of project state across `status` text + timestamp columns, (3) revisit empty-state visual when scope vocabulary expands.
+**Latest update — 2026-05-03 (later):** Stage 12.1.7 Session 3 shipped. Financial Pulse strip added to CommandCenter (4 cards: Revenue YTD / WIP Unbilled / AR > 30 Days / Crews Deployed). Shared `<SectionHeader>` extracted; RecentInvoicesPanel and ActiveProjectsByTypePanel refactored to use it. See **"2026-05-03 (later) — Stage 12.1.7 Session 3 Shipped"** entry under `## Session Log`. Four Stage 13 carry-forwards captured.
 
-**Latest shipped work:** Stage 12.1.7 Session 2 — Active Projects by Type on CommandCenter. Single commit on `feature/stakeout-qc`. Inline `ActiveProjectsByTypePanel` component renders populated (horizontal bars proportional to largest bucket, raw count in mono), empty, loading, and error states. Read-only — no click-to-filter (Session 3+).
+**Latest shipped work:** Stage 12.1.7 Session 3 — Financial Pulse strip on CommandCenter. Single commit on `feature/stakeout-qc`. Three parallel Supabase fetches (paid invoices YTD, outstanding invoices for AR aging, crew_utilization view) plus WIP derived from the existing `activeProjects` memo. Per-card error swallowing — a single fetch failure shows '—' on its card without blanking the strip.
 
-**Next session:** Stage 12.1.7 Session 3 candidates — financial-strip overhaul (Revenue YTD / WIP / AR > 30 / Crew Utilization), map marker labels, or phase-aware status pills. Section-header pattern is now reused twice (RecentInvoices + ActiveProjectsByType); the third panel ships the shared `<SectionHeader>` extraction (logged to Tech Debt).
+**Next session:** Stage 12.1.7 Session 4 candidates — map marker labels (crew + project ID, alert highlights), phase-aware status pills (lifts local Recent Invoices pill pattern to shared), delta indicators on Financial Pulse cards (month/quarter/YoY comparisons — the 3rd Stage 13 carry-forward from Session 3).
 
 **Operating rules going forward:**
 - Don't ship features on top of incorrect schema or unrestricted RLS (12.1.5 closed this).
@@ -50,7 +50,7 @@ Project types span: boundary surveys, ALTA/NSPS, topographic, as-built, subdivis
 | Stakeout QC (chief flow + matcher + scoreboard + narratives) | Real — Stage 10/11 shipped |
 | Dispatch board (drag-drop matrix, PTO, multi-day spans) | Real — Stage 9 era, holding up |
 | DeploymentModal (project creation) | Real — Lead PM selector + priority field wired in 12.1.5 |
-| CommandCenter (financial dashboard, project list, map) | Real, but financial figures are simulated demo data, not real customers. Recent Invoices added 12.1.7 S1; Active Projects by Type added 12.1.7 S2 |
+| CommandCenter (financial dashboard, project list, map) | Real. Recent Invoices added 12.1.7 S1; Active Projects by Type added 12.1.7 S2; Financial Pulse strip (Revenue YTD / WIP / AR>30 / Crews Deployed) added 12.1.7 S3. All financial figures are simulated demo data, not real customers. |
 | Crew app (chief mobile experience) | Real — clean, status-driven |
 | Licensed PM dashboard | Filters by `lead_pm_id` correctly post-12.1.5 |
 | ProjectDetail page | Doesn't exist; DispatchProjectDrawer pulling triple duty |
@@ -111,7 +111,8 @@ Project types span: boundary surveys, ALTA/NSPS, topographic, as-built, subdivis
 | 12.1.5 | Schema correctness + foundation fix | ✅ Shipped (`33e3419..6a529ab`, 7 commits) |
 | 12.1.7 S1 | Recent Invoices section on CommandCenter | ✅ Shipped (`c6572f9`) |
 | 12.1.7 S2 | Active Projects by Type panel on CommandCenter | ✅ Shipped (2026-05-03) |
-| 12.2 | Financial snapshot strip on Licensed PM dashboard | ⏳ After 12.1.7 |
+| 12.1.7 S3 | Financial Pulse strip on CommandCenter | ✅ Shipped (2026-05-03) — collapses Stage 12.2 into 12.1.7 |
+| 12.2 | Financial snapshot strip on Licensed PM dashboard | 🔁 Collapsed into 12.1.7 S3 |
 | 12.3 | ProjectDetail page (scope-aware) + nav from PM dashboard | ⏳ Requires Stage 14; re-scope after 12.1.7 |
 | 13 | Polish + testing backlog (UX issues, mobile fixes, terminology cleanup, branch hygiene) | ⏳ Pending |
 | 14 | Project model generalization (`stakeout_assignments` → general `assignments`) | ⏳ Major architectural change; affects DispatchBoard's "project = deployment" assumption |
@@ -135,13 +136,17 @@ Single commit `c6572f9` on `feature/stakeout-qc`. See Session Log entry for deta
 
 Single commit on `feature/stakeout-qc`. See Session Log entry for details.
 
+### Session 3 — SHIPPED 2026-05-03 (later): Financial Pulse strip
+
+Single commit on `feature/stakeout-qc`. Four-card strip + shared `<SectionHeader>` extraction (RecentInvoices + ActiveProjectsByType refactored to use it). See Session Log entry for details.
+
 ### Functional integration candidates remaining (pick based on session priority):
 
-1. **Improved financial header on CommandCenter** — replace current Revenue/Costs/Profit/Margin/Projects with surveyor-relevant metrics: Revenue YTD, WIP (Unbilled), AR > 30 Days, Crew Utilization. Bloomberg-grade signals owners actually scan for. **Will naturally relocate Recent Invoices and Active Projects by Type to their eventual placements when this lands.**
+1. **Map marker labels** — show crew + project ID on dispatch map markers. Highlight alert markers in amber. Uses existing project + assignment data.
 
-2. **Map marker labels** — show crew + project ID on dispatch map markers. Highlight alert markers in amber. Uses existing project + assignment data.
+2. **Phase-aware status pills** — phase-aware terminology (FIELD WORK / IN QC / DRAFTING / READY FOR REVIEW / INVOICED / ARCHIVED) instead of generic SaaS statuses. Will lift the local Recent Invoices pill pattern to a shared component when this lands. May require status enum extension.
 
-3. **Phase-aware status pills** — phase-aware terminology (FIELD WORK / IN QC / DRAFTING / READY FOR REVIEW / INVOICED / ARCHIVED) instead of generic SaaS statuses. Will lift the local Recent Invoices pill pattern to a shared component when this lands. May require status enum extension.
+3. **Delta indicators on Financial Pulse cards** — month-over-month / quarter / YoY comparisons next to each card value. Carry-forward from Session 3. Needs date-windowed historical aggregations.
 
 4. **Click-to-filter on Active Projects by Type** — Session 2 shipped read-only. A future session can add onClick handlers that filter the projects list to the clicked scope. Cheap to add when the next CommandCenter pass touches this neighborhood.
 
@@ -423,7 +428,7 @@ Sorted into three buckets. Items move between buckets as priorities shift.
 **Stitch polish (apply opportunistically during 12.1.7+):**
 - ✅ Recent Invoices section with status pills (12.1.7 S1)
 - ✅ Active Projects by Type panel (12.1.7 S2)
-- Improved CommandCenter financial strip (Revenue YTD / WIP / AR > 30 / Crew Utilization)
+- ✅ Financial Pulse strip — Revenue YTD / WIP / AR > 30 / Crews Deployed (12.1.7 S3; "Crew Utilization" redefined as Crews Deployed deployment ratio because no hours-utilization data is computable from current schema)
 - Map marker labels (crew + project ID, alert highlights)
 - Phase-aware status pills throughout (lift local Recent Invoices pill pattern to shared)
 - Hero stat treatment for QC scoreboards
@@ -783,7 +788,11 @@ Reviewed during Stage 10 scoping. **Patents not pursued during Phase 1.** Real m
 - **[TECH DEBT]** Recent Invoices status pill pattern (Stage 12.1.7 S1) is intentionally local to RecentInvoicesPanel. Lift to a shared phase-aware status pill component when the next 12.1.7 surface needs the same pattern.
 - **[TECH DEBT]** `projects.status` is barely populated. Production introspection during Stage 12.1.7 S2 found only two values across 18 rows: `archived` (15) and `pending` (3). No `active`, `in_progress`, `completed`, or `reviewed` values exist. Status column is a wedge between intent and reality. Stage 13 carry-forward: convert to a Postgres enum with explicit allowed values + CHECK constraint. Decide enum membership against actual lifecycle terminology, not the unused legacy strings.
 - **[TECH DEBT]** Project state is dual-tracked. The `status` text column carries one signal; timestamp columns (`started_at`, `completed_at`, `reviewed_at`) carry another. State transitions don't always update both — `activeProjects` filtering on CommandCenter relies on `status !== 'archived'/'completed'` AND `reviewed_at IS NULL` to compensate. Stage 13 carry-forward: pick one source of truth (status enum OR timestamp transitions) and deprecate the other. Whichever survives, write a migration to backfill historical rows so the Active/Review/Done filter logic can collapse to a single predicate.
-- **[TECH DEBT]** Section-header pattern is now duplicated across `RecentInvoicesPanel` and `ActiveProjectsByTypePanel` (both Stage 12.1.7). Extract a shared `<SectionHeader>` component when the third panel ships — likely the financial-strip overhaul session. Don't extract until the third call site exists.
+- **[TECH DEBT — RESOLVED 12.1.7 S3]** ~~Section-header pattern duplicated across RecentInvoicesPanel and ActiveProjectsByTypePanel.~~ Extracted to shared `<SectionHeader>` in Session 3 when the third panel (FinancialPulsePanel) shipped. ▴ triangle indicator from design exploration applied uniformly.
+- **[TECH DEBT]** Add `invoice_paid_at` and `invoice_sent_at` columns to `projects` (or migrate to a Stripe-style `invoices` table). Surfaced during 12.1.7 S3: Revenue YTD and AR aging are currently approximated from `projects.created_at` because no proper timing columns exist. AR > 30 cutoff is sensitive to time-of-day on the boundary day. Real production data with months of separation between project creation and invoicing will smear the YTD aggregation worse than the current test data shows.
+- **[TECH DEBT]** Audit migration history vs production schema. Surfaced during 12.1.7 S3: Migration 02 (`02_stripe_connect_tables.sql`) defines `public.invoices`, `public.payments`, and `public.stripe_accounts` tables, but `SELECT FROM public.invoices` returns "relation does not exist" in production. Either Migration 02 never ran, was rolled back, or the file was added retroactively without applying. Run an introspection pass: `SELECT tablename FROM pg_tables WHERE schemaname='public'` vs the union of `CREATE TABLE` statements across `supabase/migrations/`. Capture a manifest of which migrations actually applied.
+- **[TECH DEBT]** `crew_utilization` view exists in production (Migration 21 alters it) but its `CREATE VIEW` statement is not in any migration file. Schema drift — view was created via Supabase dashboard or in an unfound migration. Capture the definition in a new migration so the view is reproducible from the codebase. Surfaced during 12.1.7 S3 — the view's columns (`user_id, role, active_load`) had to be discovered via `information_schema` introspection.
+- **[TECH DEBT]** Delta indicators on Financial Pulse cards (month-over-month / quarter / YoY comparisons). Deferred from 12.1.7 S3 — needs date-windowed historical aggregations. Add to the next CommandCenter financial pass.
 
 ### Deferred UX/visual polish (Stage 13)
 
@@ -881,6 +890,55 @@ Stage 12.1 built scaffolding on a flawed `assigned_to` foundation. Stage 12.1.5 
 ---
 
 ## Session Log
+
+### 2026-05-03 (later) — Stage 12.1.7 Session 3 Shipped (Financial Pulse strip)
+
+**What shipped:** Financial Pulse strip on CommandCenter — four-card row spanning the operations tab content above the search bar. Single commit on `feature/stakeout-qc`. Same commit also extracts the shared `<SectionHeader>` component and refactors `RecentInvoicesPanel` + `ActiveProjectsByTypePanel` to use it.
+
+**Cards (left to right):**
+- **Revenue YTD** — `SUM(projects.invoice_amount)` WHERE `invoice_status='paid'` AND `created_at >= date_trunc('year', now())`. Test data: $12,450 (1 paid project from April 22 2026).
+- **WIP Unbilled** — `SUM(contract_fee)` over `activeProjects` WHERE `invoice_status NOT IN ('paid','sent','overdue')`. Derived in-memory from the parent's `activeProjects` memo, so the panel inherits search-narrowing for free. Test data: sum of contract_fee on the 3 pending unbilled projects (verified visually at runtime).
+- **AR > 30 Days** — `SUM(projects.invoice_amount)` WHERE `invoice_status IN ('sent','overdue')` AND `created_at < now() - 30d`. Test data: $4,750 (overdue project from April 3 2026 qualifies; sent project from April 18 2026 doesn't).
+- **Crews Deployed** — `crew_utilization` view filtered to `role IN ('pm','field_crew')`. Numerator = rows with `active_load > 0`; denominator = total rows. Test data: 0/4 deployed · 0% (sub-line "no active assignments").
+
+**Component:** `FinancialPulsePanel` (defined inline in `CommandCenter.jsx`). Single card-shell with `<SectionHeader>Financial Pulse</SectionHeader>` and a flex row of 4 stat cells separated by hairline `borderRight`. Each cell has a small uppercase mono label, a large JetBrains-Mono numeral with tabular figures, and a small mono sub-line. Per-card error swallowing — a single fetch failure shows '—' on its card without blanking the strip.
+
+**Section header extraction:** new shared `<SectionHeader>` component (top of `CommandCenter.jsx`) replaces the inline `headerStyle` block previously duplicated in `RecentInvoicesPanel` and `ActiveProjectsByTypePanel`. Adds a small ▴ triangle indicator borrowed from design exploration `01-commandcenter-desktop.png` — applied to all three panels for a unified design language. Resolves the Tech Debt note from Session 2.
+
+**Visual states verified:**
+- Populated: real numerals in tabular mono, accent left-border on AR card based on value (mint at $0, amber at >$0)
+- Empty/zero: muted gray numeral with semantic sub-text ("no paid invoices yet" / "nothing aged" / "no active assignments")
+- Loading: 4 skeleton cards with skeleton numeral + skeleton sub-line
+- Error: per-card '—' fallback (Promise.allSettled isolates each fetch)
+
+**Layout placement:** Inside the `activeTab === 'operations'` block, immediately above the search/new-project row, full-width above the existing 2-column desktop grid. Order in the operations view: greeting card → tab bar → **Financial Pulse strip** → search/new-project row → 2-column grid. Matches design exploration PNG.
+
+**Schema findings:**
+- **The Stripe invoice system DOES NOT exist in production.** SQL `SELECT FROM public.invoices` returned "relation does not exist." Migration 02 (`02_stripe_connect_tables.sql`) defines `invoices`, `payments`, `stripe_accounts` tables with proper status CHECK constraints, `sent_at`/`paid_at`/`viewed_at` timestamps, RLS policies — none of it applied. Either Migration 02 never ran, was rolled back, or the file was added retroactively. The dual-invoice-systems concern from the scope-prep phase turned out to be illusory — there is only the flat `projects.invoice_*` system.
+- **`crew_utilization` view shape:** `user_id (uuid), first_name (text), role (text), active_load (bigint)`. Per-user, not hours-based. Sample showed 5 users, all with `active_load = 0`. The view supports a deployment-ratio metric (count of users with load > 0 ÷ total users in role) but not an hours-utilization metric. Crew Utilization was redefined to "Crews Deployed" accordingly.
+- **No `created_at` proxy is perfect.** Revenue YTD uses `projects.created_at` as proxy for invoice paid date — imperfect when projects span months between creation and payment. AR aging uses the same proxy for invoice sent date. Stage 13 carry-forward (a) addresses this.
+
+**Four Stage 13 carry-forwards captured (added to Tech Debt):**
+1. Add `invoice_paid_at` and `invoice_sent_at` columns to `projects` (or migrate to Stripe-style invoices) — Revenue YTD and AR aging currently approximated from `created_at`.
+2. Audit migration history vs production schema — Migration 02 references tables that don't exist in production. Capture a manifest of which migrations actually applied.
+3. Delta indicators on Financial Pulse cards (month-over-month / quarter / YoY comparisons) — deferred from this session, requires date-windowed historical aggregations.
+4. `crew_utilization` view definition is not in any migration file (only Migration 21's `ALTER VIEW` references it). Schema drift — capture the view's `CREATE VIEW` statement in a new migration.
+
+**Manual verification before commit (math against the SQL data the user pasted):**
+- Revenue YTD: 1 paid row × $12,450 from April 22 2026 — passes `created_at >= 2026-01-01`. ✓ Code computes $12,450.
+- AR > 30: today (May 3 2026) − 30d = April 3 cutoff. Sent (April 18) → after cutoff, excluded. Overdue (April 3) → at-cutoff, included if time-of-day passes. Code computes $4,750 with seed timestamps. ✓ Edge case noted in Tech Debt (a).
+- WIP: sum of contract_fee for the 3 pending unbilled projects. Code reduces correctly over `activeProjects`. Theo verifies actual displayed dollar value at runtime.
+- Crews: 4 rows with role∈(pm,field_crew), all `active_load = 0` → 0/4. Sub-line correctly resolves to "no active assignments" because numerator === 0. ✓
+
+**Build pass:** `✓ built in 4.71s`, zero new warnings (papaparse dynamic-vs-static is the unchanged baseline). Bundle grew ~5KB for the new component + fetch logic + SectionHeader.
+
+**No deviations from Session 3 scope.** All eight locked decisions executed exactly as agreed, plus the four Stage 13 carry-forwards documented.
+
+**Stage 12.2 collapse:** the original Stage 12.2 ("Financial snapshot strip on Licensed PM dashboard") is now subsumed into 12.1.7 S3. The same component pattern can later be lifted to LicensedPmDashboard if/when PM-scoped financials become a separate ask.
+
+**Next session opens with:** Stage 12.1.7 Session 4 candidate selection — map marker labels (crew + project ID), phase-aware status pills (lifts local Recent Invoices pill pattern to shared), or delta indicators on Financial Pulse cards. The Section 3 carry-forwards land naturally during Stage 13 polish or whenever the relevant surface gets touched.
+
+---
 
 ### 2026-05-03 — Stage 12.1.7 Session 2 Shipped (Active Projects by Type)
 

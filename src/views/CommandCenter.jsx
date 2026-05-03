@@ -104,23 +104,39 @@ function InvoiceStatusPill({ status }) {
   );
 }
 
+// ── SectionHeader (Stage 12.1.7 — Session 3) ──────────────────────
+// Shared card-internal header. Three call sites: RecentInvoicesPanel,
+// ActiveProjectsByTypePanel, FinancialPulsePanel. Triangle indicator
+// borrowed from the design exploration PNG (▴ FINANCIAL PULSE etc.) —
+// applied uniformly so the three panels read as one design language.
+function SectionHeader({ children }) {
+  return (
+    <div style={{
+      padding: '14px 16px',
+      borderBottom: '1px solid var(--border-subtle)',
+      backgroundColor: 'rgba(0,0,0,0.2)',
+      fontFamily: "'JetBrains Mono', monospace",
+      fontSize: '0.72em',
+      fontWeight: 700,
+      letterSpacing: '0.08em',
+      color: 'var(--text-muted)',
+      textTransform: 'uppercase',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px',
+    }}>
+      <span style={{ color: 'var(--brand-teal-light)', opacity: 0.7 }}>▴</span>
+      <span>{children}</span>
+    </div>
+  );
+}
+
 function RecentInvoicesPanel({ invoices, loading, error, onOpenProject }) {
   const sectionStyle = {
     backgroundColor: 'var(--bg-surface)',
     border: '1px solid var(--border-subtle)',
     borderRadius: '12px',
     overflow: 'hidden',
-  };
-  const headerStyle = {
-    padding: '14px 16px',
-    borderBottom: '1px solid var(--border-subtle)',
-    backgroundColor: 'rgba(0,0,0,0.2)',
-    fontFamily: "'JetBrains Mono', monospace",
-    fontSize: '0.72em',
-    fontWeight: 700,
-    letterSpacing: '0.08em',
-    color: 'var(--text-muted)',
-    textTransform: 'uppercase',
   };
   const rowStyle = (isLast) => ({
     padding: '12px 16px',
@@ -200,7 +216,7 @@ function RecentInvoicesPanel({ invoices, loading, error, onOpenProject }) {
 
   return (
     <div style={sectionStyle}>
-      <div style={headerStyle}>Recent Invoices</div>
+      <SectionHeader>Recent Invoices</SectionHeader>
       {body}
     </div>
   );
@@ -226,17 +242,6 @@ function ActiveProjectsByTypePanel({ projects, loading, error }) {
     border: '1px solid var(--border-subtle)',
     borderRadius: '12px',
     overflow: 'hidden',
-  };
-  const headerStyle = {
-    padding: '14px 16px',
-    borderBottom: '1px solid var(--border-subtle)',
-    backgroundColor: 'rgba(0,0,0,0.2)',
-    fontFamily: "'JetBrains Mono', monospace",
-    fontSize: '0.72em',
-    fontWeight: 700,
-    letterSpacing: '0.08em',
-    color: 'var(--text-muted)',
-    textTransform: 'uppercase',
   };
   const subHeaderStyle = {
     padding: '8px 16px',
@@ -364,7 +369,7 @@ function ActiveProjectsByTypePanel({ projects, loading, error }) {
 
   return (
     <div style={sectionStyle}>
-      <div style={headerStyle}>Active Projects by Type</div>
+      <SectionHeader>Active Projects by Type</SectionHeader>
       {showSubHeader && (
         <div style={subHeaderStyle}>
           <span>Active: <span style={{ color: 'var(--text-main)', fontWeight: 700 }}>{activeCount}</span></span>
@@ -373,6 +378,161 @@ function ActiveProjectsByTypePanel({ projects, loading, error }) {
         </div>
       )}
       {body}
+    </div>
+  );
+}
+
+// ── Financial Pulse (Stage 12.1.7 — Session 3) ─────────────────────
+// Four-card strip: Revenue YTD, WIP Unbilled, AR > 30 Days, Crews
+// Deployed. Source: projects.invoice_* columns + crew_utilization
+// view. The Stripe-style public.invoices/public.payments tables in
+// migration 02 don't exist in production (audit pending — Stage 13
+// carry-forward). Revenue YTD and AR aging timing approximate
+// because no invoice_paid_at/invoice_sent_at columns exist on
+// projects — created_at is used as proxy. Stage 13 carry-forward
+// to add proper timing columns or migrate to Stripe-style tables.
+//
+// Per-card error swallowing: a failed fetch shows '—' on that card
+// alone; the strip stays visible. Zero values render with semantic
+// accent — AR > 30 = $0 is healthy (mint), AR > 30 > 0 is warning
+// (amber).
+function FinancialPulsePanel({ stats }) {
+  const sectionStyle = {
+    backgroundColor: 'var(--bg-surface)',
+    border: '1px solid var(--border-subtle)',
+    borderRadius: '12px',
+    overflow: 'hidden',
+  };
+  const labelStyle = {
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: '0.65em',
+    fontWeight: 700,
+    letterSpacing: '0.08em',
+    color: 'var(--text-muted)',
+    textTransform: 'uppercase',
+  };
+  const valueBaseStyle = {
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: '1.9em',
+    fontWeight: 700,
+    letterSpacing: '-0.02em',
+    lineHeight: 1.1,
+    fontVariantNumeric: 'tabular-nums',
+  };
+  const subStyle = {
+    fontSize: '0.72em',
+    color: 'var(--text-muted)',
+    fontFamily: "'JetBrains Mono', monospace",
+    letterSpacing: '0.02em',
+  };
+
+  const cards = [
+    {
+      key: 'revenueYtd',
+      label: 'Revenue YTD',
+      stat: stats.revenueYtd,
+      formatValue: (s) => formatInvoiceUSD(s.value),
+      formatSub: (s) => s.value > 0 ? 'paid this year' : 'no paid invoices yet',
+      isZero: (s) => !(s.value > 0),
+      accent: () => null,
+    },
+    {
+      key: 'wip',
+      label: 'WIP Unbilled',
+      stat: stats.wip,
+      formatValue: (s) => formatInvoiceUSD(s.value),
+      formatSub: (s) => s.value > 0 ? 'active contracts' : 'no active contracts',
+      isZero: (s) => !(s.value > 0),
+      accent: () => null,
+    },
+    {
+      key: 'arOver30',
+      label: 'AR > 30 Days',
+      stat: stats.arOver30,
+      formatValue: (s) => formatInvoiceUSD(s.value),
+      formatSub: (s) => s.value > 0 ? 'sent · overdue' : 'nothing aged',
+      isZero: (s) => !(s.value > 0),
+      accent: (s) => s.value > 0 ? 'var(--brand-amber)' : 'var(--brand-teal-light)',
+    },
+    {
+      key: 'crewsDeployed',
+      label: 'Crews Deployed',
+      stat: stats.crewsDeployed,
+      formatValue: (s) => s.denominator === 0 ? '—' : `${s.numerator} / ${s.denominator}`,
+      formatSub: (s) => {
+        if (s.denominator === 0) return 'no crew roster';
+        if (s.numerator === 0) return 'no active assignments';
+        const pct = Math.round((s.numerator / s.denominator) * 100);
+        return `${pct}% deployed`;
+      },
+      isZero: (s) => s.numerator === 0,
+      accent: () => null,
+    },
+  ];
+
+  return (
+    <div style={sectionStyle}>
+      <SectionHeader>Financial Pulse</SectionHeader>
+      <div style={{ display: 'flex', alignItems: 'stretch', flexWrap: 'wrap' }}>
+        {cards.map((card, idx) => {
+          const isLast = idx === cards.length - 1;
+          const stat = card.stat;
+          const accentColor = stat && !stat.loading && !stat.error ? card.accent(stat) : null;
+
+          let valueRender;
+          let subRender;
+          if (!stat || stat.loading) {
+            valueRender = (
+              <div style={{ height: '32px', width: '70%', backgroundColor: 'var(--border-subtle)', borderRadius: '3px' }} />
+            );
+            subRender = (
+              <div style={{ height: '10px', width: '50%', backgroundColor: 'var(--border-subtle)', borderRadius: '3px' }} />
+            );
+          } else if (stat.error) {
+            valueRender = <span style={{ ...valueBaseStyle, color: 'var(--text-muted)' }}>—</span>;
+            subRender = <span style={subStyle}>unable to load</span>;
+          } else {
+            const zero = card.isZero(stat);
+            valueRender = (
+              <span style={{
+                ...valueBaseStyle,
+                color: zero ? 'var(--text-muted)' : 'var(--text-main)',
+              }}>
+                {card.formatValue(stat)}
+              </span>
+            );
+            subRender = <span style={subStyle}>{card.formatSub(stat)}</span>;
+          }
+
+          return (
+            <div key={card.key} style={{
+              flex: '1 1 200px',
+              minWidth: '180px',
+              padding: '18px 20px 20px 20px',
+              borderRight: !isLast ? '1px solid var(--border-subtle)' : 'none',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px',
+              minHeight: '120px',
+              position: 'relative',
+            }}>
+              {accentColor && (
+                <div style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  bottom: 0,
+                  width: '2px',
+                  backgroundColor: accentColor,
+                }} />
+              )}
+              <div style={labelStyle}>{card.label}</div>
+              {valueRender}
+              {subRender}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -410,7 +570,70 @@ export default function CommandCenter({ profile, projects, teamMembers, onProjec
   const [invoicesLoading, setInvoicesLoading] = useState(true);
   const [invoicesError, setInvoicesError] = useState(false);
 
-  useEffect(() => { fetchTeam(); fetchRecentInvoices(); }, []);
+  // Financial Pulse (Stage 12.1.7 — Session 3). Three parallel
+  // fetches: paid-this-year for Revenue YTD, outstanding invoices
+  // for AR > 30 (filtered client-side by created_at cutoff), and
+  // crew_utilization view for Crews Deployed. WIP is derived from
+  // activeProjects below — same source the Active tab uses, so
+  // the panel inherits search-narrowing for free. Per-card error
+  // swallowing: any single fetch failure shows '—' on its card
+  // without blanking the strip.
+  const [pulseRevenue, setPulseRevenue] = useState({ value: 0, loading: true, error: false });
+  const [pulseAr, setPulseAr] = useState({ value: 0, loading: true, error: false });
+  const [pulseCrews, setPulseCrews] = useState({ numerator: 0, denominator: 0, loading: true, error: false });
+
+  useEffect(() => { fetchTeam(); fetchRecentInvoices(); fetchFinancialPulse(); }, []);
+
+  const fetchFinancialPulse = async () => {
+    const yearStart = new Date(new Date().getFullYear(), 0, 1).toISOString();
+    const cutoffMs = Date.now() - 30 * 24 * 60 * 60 * 1000;
+
+    const [revenueResult, arResult, crewsResult] = await Promise.allSettled([
+      supabase
+        .from('projects')
+        .select('invoice_amount')
+        .eq('invoice_status', 'paid')
+        .gte('created_at', yearStart),
+      supabase
+        .from('projects')
+        .select('invoice_amount, created_at')
+        .in('invoice_status', ['sent', 'overdue']),
+      supabase
+        .from('crew_utilization')
+        .select('user_id, role, active_load')
+        .in('role', ['pm', 'field_crew']),
+    ]);
+
+    if (revenueResult.status === 'fulfilled' && !revenueResult.value.error) {
+      const sum = (revenueResult.value.data || []).reduce(
+        (acc, p) => acc + Number(p.invoice_amount || 0), 0
+      );
+      setPulseRevenue({ value: sum, loading: false, error: false });
+    } else {
+      console.error('[FinancialPulse] revenue fetch failed:', revenueResult);
+      setPulseRevenue({ value: 0, loading: false, error: true });
+    }
+
+    if (arResult.status === 'fulfilled' && !arResult.value.error) {
+      const sum = (arResult.value.data || [])
+        .filter(p => new Date(p.created_at).getTime() < cutoffMs)
+        .reduce((acc, p) => acc + Number(p.invoice_amount || 0), 0);
+      setPulseAr({ value: sum, loading: false, error: false });
+    } else {
+      console.error('[FinancialPulse] AR fetch failed:', arResult);
+      setPulseAr({ value: 0, loading: false, error: true });
+    }
+
+    if (crewsResult.status === 'fulfilled' && !crewsResult.value.error) {
+      const rows = crewsResult.value.data || [];
+      const denominator = rows.length;
+      const numerator = rows.filter(r => Number(r.active_load) > 0).length;
+      setPulseCrews({ numerator, denominator, loading: false, error: false });
+    } else {
+      console.error('[FinancialPulse] crews fetch failed:', crewsResult);
+      setPulseCrews({ numerator: 0, denominator: 0, loading: false, error: true });
+    }
+  };
 
   const fetchRecentInvoices = async () => {
     setInvoicesLoading(true);
@@ -463,6 +686,28 @@ export default function CommandCenter({ profile, projects, teamMembers, onProjec
     return allMatchSearch(p);
   }), [projects, searchQuery]);
 
+  // WIP — sum of contract_fee for active projects whose invoice
+  // hasn't been issued yet. Mirrors activeProjects exactly so the
+  // panel and the Active tab agree, and inherits search-narrowing.
+  const pulseWip = useMemo(() => {
+    try {
+      const sum = activeProjects
+        .filter(p => !['paid', 'sent', 'overdue'].includes((p.invoice_status || '').toLowerCase()))
+        .reduce((acc, p) => acc + Number(p.contract_fee || 0), 0);
+      return { value: sum, loading: false, error: false };
+    } catch (e) {
+      console.error('[FinancialPulse] WIP compute failed:', e);
+      return { value: 0, loading: false, error: true };
+    }
+  }, [activeProjects]);
+
+  const pulseStats = {
+    revenueYtd: pulseRevenue,
+    wip: pulseWip,
+    arOver30: pulseAr,
+    crewsDeployed: pulseCrews,
+  };
+
   const reviewProjects = useMemo(() => (projects || []).filter(p => {
     if (p.status === 'archived') return false;
     if (!p.completed_at) return false;
@@ -506,6 +751,14 @@ export default function CommandCenter({ profile, projects, teamMembers, onProjec
 
       {/* OPERATIONS VIEW */}
       {activeTab === 'operations' && <>
+
+        {/* FINANCIAL PULSE — Stage 12.1.7 Session 3 */}
+        {/* Full-width strip between greeting/tab bar and the search */}
+        {/* row, matching design exploration 01-commandcenter-desktop.png */}
+        <div style={{ marginBottom: '24px' }}>
+          <FinancialPulsePanel stats={pulseStats} />
+        </div>
+
         <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
           <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search by project name or ID..." style={{ ...inputStyle, flex: 1, padding: '14px 16px', fontSize: '0.95em', borderRadius: '10px' }} />
           <button onClick={() => setIsDeploying(true)} style={{ padding: '14px 20px', borderRadius: '10px', border: 'none', backgroundColor: 'var(--brand-teal)', color: '#fff', fontWeight: '700', fontSize: '0.85em', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'transform 0.2s ease', boxShadow: '0 4px 15px rgba(13, 79, 79, 0.3)' }} onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.03)'} onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}>+ New Deployment</button>
