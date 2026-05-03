@@ -206,6 +206,177 @@ function RecentInvoicesPanel({ invoices, loading, error, onOpenProject }) {
   );
 }
 
+// ── Active Projects by Type (Stage 12.1.7 — Session 2) ─────────────
+// Communicates "OS for ALL surveying" at a glance. Schema-free; uses
+// existing projects.scope jsonb (multi-select array). Canonical
+// vocabulary lives in DeploymentModal.jsx SCOPE_OPTIONS; the panel
+// renders whatever values it finds, so off-vocabulary scopes (CSV
+// imports, hand-edits) surface visibly rather than silently drop.
+//
+// Filter mirrors activeProjects (status !== archived/completed AND
+// reviewed_at IS NULL) so the panel and the Active tab agree on
+// which projects count. Search-narrowing inherits because the panel
+// consumes the same memoized list.
+//
+// Scope occurrences > project count is expected: projects span
+// multiple scopes (a job can be both Boundary and Topographic).
+function ActiveProjectsByTypePanel({ projects, loading, error }) {
+  const sectionStyle = {
+    backgroundColor: 'var(--bg-surface)',
+    border: '1px solid var(--border-subtle)',
+    borderRadius: '12px',
+    overflow: 'hidden',
+  };
+  const headerStyle = {
+    padding: '14px 16px',
+    borderBottom: '1px solid var(--border-subtle)',
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: '0.72em',
+    fontWeight: 700,
+    letterSpacing: '0.08em',
+    color: 'var(--text-muted)',
+    textTransform: 'uppercase',
+  };
+  const subHeaderStyle = {
+    padding: '8px 16px',
+    borderBottom: '1px solid var(--border-subtle)',
+    backgroundColor: 'rgba(0,0,0,0.1)',
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: '0.7em',
+    color: 'var(--text-muted)',
+    letterSpacing: '0.04em',
+    display: 'flex',
+    gap: '10px',
+    alignItems: 'center',
+  };
+  const rowStyle = (isLast) => ({
+    padding: '12px 16px',
+    borderBottom: isLast ? 'none' : '1px solid var(--border-subtle)',
+  });
+
+  const scopeCounts = {};
+  let activeCount = 0;
+  let scopeOccurrences = 0;
+  let computeError = false;
+
+  if (!loading && !error && Array.isArray(projects)) {
+    try {
+      activeCount = projects.length;
+      for (const p of projects) {
+        const scopes = Array.isArray(p?.scope) ? p.scope : [];
+        for (const s of scopes) {
+          if (typeof s !== 'string') continue;
+          const key = s.trim();
+          if (!key) continue;
+          scopeCounts[key] = (scopeCounts[key] || 0) + 1;
+          scopeOccurrences += 1;
+        }
+      }
+    } catch (e) {
+      console.error('[ActiveProjectsByType] scope count failed:', e);
+      computeError = true;
+    }
+  }
+
+  const sortedScopes = Object.entries(scopeCounts)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const maxCount = sortedScopes.length > 0 ? sortedScopes[0][1] : 0;
+
+  let body;
+  if (loading) {
+    body = (
+      <div>
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} style={rowStyle(i === 3)}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '8px' }}>
+              <div style={{ height: '12px', width: '45%', backgroundColor: 'var(--border-subtle)', borderRadius: '3px' }} />
+              <div style={{ height: '12px', width: '24px', backgroundColor: 'var(--border-subtle)', borderRadius: '3px' }} />
+            </div>
+            <div style={{ height: '6px', width: `${85 - i * 18}%`, backgroundColor: 'var(--border-subtle)', borderRadius: '3px' }} />
+          </div>
+        ))}
+      </div>
+    );
+  } else if (error || computeError) {
+    body = (
+      <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85em' }}>
+        Unable to load projects.
+      </div>
+    );
+  } else if (sortedScopes.length === 0) {
+    body = (
+      <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85em', fontStyle: 'italic' }}>
+        No active projects yet.
+      </div>
+    );
+  } else {
+    body = (
+      <div>
+        {sortedScopes.map(([scope, count], idx) => {
+          const isLast = idx === sortedScopes.length - 1;
+          const widthPct = maxCount > 0 ? (count / maxCount) * 100 : 0;
+          return (
+            <div key={scope} style={rowStyle(isLast)}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '12px', marginBottom: '8px' }}>
+                <span style={{
+                  flex: 1,
+                  minWidth: 0,
+                  fontSize: '0.9em',
+                  color: 'var(--text-main)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}>
+                  {scope}
+                </span>
+                <span className="coordinate-data" style={{
+                  fontSize: '0.85em',
+                  fontWeight: 700,
+                  color: 'var(--text-main)',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {count}
+                </span>
+              </div>
+              <div style={{
+                height: '6px',
+                backgroundColor: 'var(--border-subtle)',
+                borderRadius: '3px',
+                overflow: 'hidden',
+              }}>
+                <div style={{
+                  height: '100%',
+                  width: `${widthPct}%`,
+                  backgroundColor: 'var(--brand-teal-light)',
+                  borderRadius: '3px',
+                  transition: 'width 0.3s ease',
+                }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  const showSubHeader = !loading && !error && !computeError && sortedScopes.length > 0;
+
+  return (
+    <div style={sectionStyle}>
+      <div style={headerStyle}>Active Projects by Type</div>
+      {showSubHeader && (
+        <div style={subHeaderStyle}>
+          <span>Active: <span style={{ color: 'var(--text-main)', fontWeight: 700 }}>{activeCount}</span></span>
+          <span style={{ color: 'var(--border-subtle)' }}>·</span>
+          <span>Scope occurrences: <span style={{ color: 'var(--text-main)', fontWeight: 700 }}>{scopeOccurrences}</span></span>
+        </div>
+      )}
+      {body}
+    </div>
+  );
+}
+
 export default function CommandCenter({ profile, projects, teamMembers, onProjectSelect, onCreateProject, onArchiveProject, onProjectUpdate }) {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
@@ -380,6 +551,16 @@ export default function CommandCenter({ profile, projects, teamMembers, onProjec
             loading={invoicesLoading}
             error={invoicesError}
             onOpenProject={setDrawerProject}
+          />
+
+          {/* ACTIVE PROJECTS BY TYPE */}
+          {/* Mirrors the Active tab's filter via activeProjects, so the */}
+          {/* panel and the segmented control agree on which projects */}
+          {/* count. Read-only for now — click-to-filter is Session 3+. */}
+          <ActiveProjectsByTypePanel
+            projects={activeProjects}
+            loading={false}
+            error={false}
           />
 
           </div>

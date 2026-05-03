@@ -10,13 +10,13 @@
 
 ---
 
-## ⚠️ READ THIS FIRST IF STARTING A NEW SESSION (2026-04-29)
+## ⚠️ READ THIS FIRST IF STARTING A NEW SESSION (2026-05-03)
 
-**Latest update — 2026-04-29 (evening):** Stage 12.1.7 Session 1 shipped. Recent Invoices section added to CommandCenter. See **"2026-04-29 (evening) — Stage 12.1.7 Session 1 Shipped"** entry under `## Session Log`. Baseline tag `baseline/pre-polish-2026-04-29` created at `c6572f9` and pushed to GitHub before further polish work begins. Branch hygiene noted as a Stage 13 front-loaded task — see **"Stage 13 Branch Hygiene Runbook"** below.
+**Latest update — 2026-05-03:** Stage 12.1.7 Session 2 shipped. Active Projects by Type panel added to CommandCenter. See **"2026-05-03 — Stage 12.1.7 Session 2 Shipped"** entry under `## Session Log`. Three Stage 13 carry-forwards captured: (1) convert `projects.status` to a Postgres enum, (2) resolve dual-tracking of project state across `status` text + timestamp columns, (3) revisit empty-state visual when scope vocabulary expands.
 
-**Latest shipped work:** Stage 12.1.7 Session 1 — Recent Invoices on CommandCenter. Single commit `c6572f9` on `feature/stakeout-qc`. Component renders populated state (PAID/SENT/OVERDUE pills working), empty state, error state, loading state. Click handler reuses existing DispatchProjectDrawer trigger.
+**Latest shipped work:** Stage 12.1.7 Session 2 — Active Projects by Type on CommandCenter. Single commit on `feature/stakeout-qc`. Inline `ActiveProjectsByTypePanel` component renders populated (horizontal bars proportional to largest bucket, raw count in mono), empty, loading, and error states. Read-only — no click-to-filter (Session 3+).
 
-**Next session:** Stage 12.1.7 Session 2 — Active Projects by Type panel on CommandCenter. Schema-free (uses existing `projects.scope` jsonb). Same surface, allows another opportunistic polish pass at section-header consistency.
+**Next session:** Stage 12.1.7 Session 3 candidates — financial-strip overhaul (Revenue YTD / WIP / AR > 30 / Crew Utilization), map marker labels, or phase-aware status pills. Section-header pattern is now reused twice (RecentInvoices + ActiveProjectsByType); the third panel ships the shared `<SectionHeader>` extraction (logged to Tech Debt).
 
 **Operating rules going forward:**
 - Don't ship features on top of incorrect schema or unrestricted RLS (12.1.5 closed this).
@@ -50,7 +50,7 @@ Project types span: boundary surveys, ALTA/NSPS, topographic, as-built, subdivis
 | Stakeout QC (chief flow + matcher + scoreboard + narratives) | Real — Stage 10/11 shipped |
 | Dispatch board (drag-drop matrix, PTO, multi-day spans) | Real — Stage 9 era, holding up |
 | DeploymentModal (project creation) | Real — Lead PM selector + priority field wired in 12.1.5 |
-| CommandCenter (financial dashboard, project list, map) | Real, but financial figures are simulated demo data, not real customers. Recent Invoices section added 12.1.7 S1 |
+| CommandCenter (financial dashboard, project list, map) | Real, but financial figures are simulated demo data, not real customers. Recent Invoices added 12.1.7 S1; Active Projects by Type added 12.1.7 S2 |
 | Crew app (chief mobile experience) | Real — clean, status-driven |
 | Licensed PM dashboard | Filters by `lead_pm_id` correctly post-12.1.5 |
 | ProjectDetail page | Doesn't exist; DispatchProjectDrawer pulling triple duty |
@@ -110,7 +110,7 @@ Project types span: boundary surveys, ALTA/NSPS, topographic, as-built, subdivis
 | 12.1.1 | LicensedPmDashboard query + routing fix | ✅ Shipped (`bc0ce16`) |
 | 12.1.5 | Schema correctness + foundation fix | ✅ Shipped (`33e3419..6a529ab`, 7 commits) |
 | 12.1.7 S1 | Recent Invoices section on CommandCenter | ✅ Shipped (`c6572f9`) |
-| **12.1.7 S2** | **Active Projects by Type panel on CommandCenter (NEXT)** | ⏳ **Next** |
+| 12.1.7 S2 | Active Projects by Type panel on CommandCenter | ✅ Shipped (2026-05-03) |
 | 12.2 | Financial snapshot strip on Licensed PM dashboard | ⏳ After 12.1.7 |
 | 12.3 | ProjectDetail page (scope-aware) + nav from PM dashboard | ⏳ Requires Stage 14; re-scope after 12.1.7 |
 | 13 | Polish + testing backlog (UX issues, mobile fixes, terminology cleanup, branch hygiene) | ⏳ Pending |
@@ -131,15 +131,19 @@ Foundation is correct (12.1.5 shipped). This stage builds functional integration
 
 Single commit `c6572f9` on `feature/stakeout-qc`. See Session Log entry for details.
 
+### Session 2 — SHIPPED 2026-05-03: Active Projects by Type panel
+
+Single commit on `feature/stakeout-qc`. See Session Log entry for details.
+
 ### Functional integration candidates remaining (pick based on session priority):
 
-1. **Active Projects by Type panel on CommandCenter** — uses existing `projects.scope` jsonb. Horizontal bar list grouped by scope value. Communicates "OS for ALL surveying" message at a glance. **Highest-leverage candidate for Session 2.**
+1. **Improved financial header on CommandCenter** — replace current Revenue/Costs/Profit/Margin/Projects with surveyor-relevant metrics: Revenue YTD, WIP (Unbilled), AR > 30 Days, Crew Utilization. Bloomberg-grade signals owners actually scan for. **Will naturally relocate Recent Invoices and Active Projects by Type to their eventual placements when this lands.**
 
-2. **Improved financial header on CommandCenter** — replace current Revenue/Costs/Profit/Margin/Projects with surveyor-relevant metrics: Revenue YTD, WIP (Unbilled), AR > 30 Days, Crew Utilization. Bloomberg-grade signals owners actually scan for. **Will naturally relocate Recent Invoices to its eventual full-width position when this lands.**
+2. **Map marker labels** — show crew + project ID on dispatch map markers. Highlight alert markers in amber. Uses existing project + assignment data.
 
-3. **Map marker labels** — show crew + project ID on dispatch map markers. Highlight alert markers in amber. Uses existing project + assignment data.
+3. **Phase-aware status pills** — phase-aware terminology (FIELD WORK / IN QC / DRAFTING / READY FOR REVIEW / INVOICED / ARCHIVED) instead of generic SaaS statuses. Will lift the local Recent Invoices pill pattern to a shared component when this lands. May require status enum extension.
 
-4. **Phase-aware status pills** — phase-aware terminology (FIELD WORK / IN QC / DRAFTING / READY FOR REVIEW / INVOICED / ARCHIVED) instead of generic SaaS statuses. Will lift the local Recent Invoices pill pattern to a shared component when this lands. May require status enum extension.
+4. **Click-to-filter on Active Projects by Type** — Session 2 shipped read-only. A future session can add onClick handlers that filter the projects list to the clicked scope. Cheap to add when the next CommandCenter pass touches this neighborhood.
 
 **Stitch polish items to apply during the above edits:**
 
@@ -418,8 +422,8 @@ Sorted into three buckets. Items move between buckets as priorities shift.
 
 **Stitch polish (apply opportunistically during 12.1.7+):**
 - ✅ Recent Invoices section with status pills (12.1.7 S1)
+- ✅ Active Projects by Type panel (12.1.7 S2)
 - Improved CommandCenter financial strip (Revenue YTD / WIP / AR > 30 / Crew Utilization)
-- Active Projects by Type panel
 - Map marker labels (crew + project ID, alert highlights)
 - Phase-aware status pills throughout (lift local Recent Invoices pill pattern to shared)
 - Hero stat treatment for QC scoreboards
@@ -556,7 +560,7 @@ Sorted into three buckets. Items move between buckets as priorities shift.
 | 12.1.1 | Routing + query fixes | ✅ Shipped (`bc0ce16`) |
 | 12.1.5 | Schema correctness + foundation fix | ✅ Shipped (`33e3419..6a529ab`) |
 | 12.1.7 S1 | Recent Invoices on CommandCenter | ✅ Shipped (`c6572f9`) |
-| **12.1.7 S2** | **Active Projects by Type panel (NEXT)** | ⏳ **NEXT** |
+| 12.1.7 S2 | Active Projects by Type panel | ✅ Shipped (2026-05-03) |
 | 12.2 | Financial snapshot strip | ⏳ After 12.1.7 |
 | 12.3 | ProjectDetail nav | ⏳ Re-scope after 12.1.7; depends on Stage 14 |
 | 13 | Polish + testing backlog (incl. branch hygiene) | ⏳ Pending |
@@ -777,6 +781,9 @@ Reviewed during Stage 10 scoping. **Patents not pursued during Phase 1.** Real m
 - **[TECH DEBT]** `user_profiles.role` lacks a CHECK constraint — accepts any string.
 - **[TECH DEBT]** Assignment-level `client_contact_name` and `client_contact_phone` (Migration 13) duplicated by project-level columns added in Migration 20. Migrate up + drop assignment-level cols.
 - **[TECH DEBT]** Recent Invoices status pill pattern (Stage 12.1.7 S1) is intentionally local to RecentInvoicesPanel. Lift to a shared phase-aware status pill component when the next 12.1.7 surface needs the same pattern.
+- **[TECH DEBT]** `projects.status` is barely populated. Production introspection during Stage 12.1.7 S2 found only two values across 18 rows: `archived` (15) and `pending` (3). No `active`, `in_progress`, `completed`, or `reviewed` values exist. Status column is a wedge between intent and reality. Stage 13 carry-forward: convert to a Postgres enum with explicit allowed values + CHECK constraint. Decide enum membership against actual lifecycle terminology, not the unused legacy strings.
+- **[TECH DEBT]** Project state is dual-tracked. The `status` text column carries one signal; timestamp columns (`started_at`, `completed_at`, `reviewed_at`) carry another. State transitions don't always update both — `activeProjects` filtering on CommandCenter relies on `status !== 'archived'/'completed'` AND `reviewed_at IS NULL` to compensate. Stage 13 carry-forward: pick one source of truth (status enum OR timestamp transitions) and deprecate the other. Whichever survives, write a migration to backfill historical rows so the Active/Review/Done filter logic can collapse to a single predicate.
+- **[TECH DEBT]** Section-header pattern is now duplicated across `RecentInvoicesPanel` and `ActiveProjectsByTypePanel` (both Stage 12.1.7). Extract a shared `<SectionHeader>` component when the third panel ships — likely the financial-strip overhaul session. Don't extract until the third call site exists.
 
 ### Deferred UX/visual polish (Stage 13)
 
@@ -874,6 +881,50 @@ Stage 12.1 built scaffolding on a flawed `assigned_to` foundation. Stage 12.1.5 
 ---
 
 ## Session Log
+
+### 2026-05-03 — Stage 12.1.7 Session 2 Shipped (Active Projects by Type)
+
+**What shipped:** Active Projects by Type panel on CommandCenter. Single commit on `feature/stakeout-qc`, pushed.
+
+**Component:** `ActiveProjectsByTypePanel` (defined inline in `CommandCenter.jsx`, immediately after `RecentInvoicesPanel`). Consumes the parent's `activeProjects` memoized list (same source the Active tab uses), counts scope occurrences across the multi-select `projects.scope` jsonb, sorts buckets by count descending with alphabetical tie-break, renders horizontal bars proportional to `count / max(count)`. Raw count rendered in JetBrains Mono right-aligned next to each bar. Section header matches `RecentInvoicesPanel` chrome (uppercase mono); a sub-header line below clarifies the math: `Active: N · Scope occurrences: M`, with `M ≥ N` because projects span scopes.
+
+**States verified:**
+- Populated: bars rendered for whatever scope values exist in the active set, ordered by count
+- Empty: "No active projects yet." (italic, muted)
+- Loading: 4-row skeleton with bar placeholders (rare in practice — see "Loading caveat" below)
+- Error: "Unable to load projects." (defensive try/catch around scope counting; rare)
+
+**Placement:** Left column of the desktop grid, directly below `RecentInvoicesPanel` (slot pattern: third item in left column after Map → Recent Invoices → Active Projects by Type). Same `var(--bg-surface)` card chrome, same uppercase mono section header. Temp arrangement; the financial-strip overhaul session will rearrange both panels.
+
+**Filter parity with Active tab:** Panel consumes the parent's `activeProjects` memo directly (CommandCenter.jsx:288-293). The filter is `status !== 'archived' AND status !== 'completed' AND reviewed_at IS NULL`, with search-narrowing layered in via `allMatchSearch`. This means typing in the Command Center search bar narrows the panel automatically — coherent with the Active tab. No drift risk because both surfaces share the same memoized list.
+
+**Loading caveat (documented in code):** Because the panel consumes a memoized derivation of the parent's `projects` prop (not a separate fetch), the loading state is dead code in practice — App.jsx initializes `projects = []` and the component mounts only after `profile` is set. The loading branch is rendered defensively for future use if a `loading` signal ever propagates from App.jsx, but currently never fires. This diverges from Session 1 where `RecentInvoicesPanel` did its own fetch (different filter from parent, justifying the separate call). Here, doing a separate fetch would create drift risk against the parent's `activeProjects` filter.
+
+**Visual decisions:**
+- Bars: 6px height, full-color `var(--brand-teal-light)` fill on `var(--border-subtle)` track, 3px corner radius, 0.3s width transition
+- Sub-header: distinct chrome from main header (lower opacity bg, mixed-case, mono digits bolded). Renders only in the populated state.
+- Sort order: count desc, alphabetical tie-break — gives the eye an instant "what's most active right now" scan. Not canonical-vocabulary order; the panel renders whatever values exist in the data.
+- Empty buckets: zero-count scopes are NOT rendered. Decision per Session 2 scope: empty buckets clutter the panel for a small-portfolio firm; the "OS for ALL surveying" message is communicated when a populated portfolio shows multiple scope categories, not by displaying placeholders for unused categories.
+- Off-vocabulary scopes: rendered as-is. A scope value not in `SCOPE_OPTIONS` (e.g., from CSV import or hand-edit) surfaces visibly. This is intentional — drift is a signal, not something to silence.
+
+**SQL verification before implementation:**
+- `SELECT DISTINCT status, COUNT(*) FROM projects GROUP BY status` returned just two values: `archived` (15 rows) and `pending` (3 rows). 18 projects total, 3 active. The rich set of statuses the code defends against (`active`, `in_progress`, `completed`, `reviewed`) does not exist in the data. State transitions are tracked through timestamp columns (`started_at`, `completed_at`, `reviewed_at`) instead of status string updates.
+- `projects.scope` confirmed as `jsonb DEFAULT '[]'::jsonb` (Migration 20, line 49). No CHECK constraint, so any string can be written. Canonical vocabulary lives only in `SCOPE_OPTIONS` in `DeploymentModal.jsx` (Boundary, Topographic, ALTA/NSPS, Construction Staking, As-Built, Control Network).
+
+**Three Stage 13 carry-forwards captured (added to Tech Debt):**
+1. Convert `projects.status` text column to a Postgres enum with explicit allowed values + CHECK constraint. Decide enum membership against actual lifecycle terminology, not the unused legacy strings.
+2. Resolve dual-tracking pattern: `status` text column AND timestamp columns both encode project state, and state transitions don't always update both. Pick one source of truth and deprecate the other.
+3. Extract a shared `<SectionHeader>` component when the third panel ships (RecentInvoices + ActiveProjectsByType now duplicate the pattern). Don't extract until call site #3 exists.
+
+**Build pass:** `✓ built in 5.93s`, zero new warnings. The papaparse dynamic-vs-static import warning is the pre-existing baseline, unchanged from Session 1.
+
+**Pre-existing bug NOT touched (Session 2 scope discipline):** the `consumables_log.material does not exist` console error from a dead view (NetworkOps / FieldLogs / EquipmentLogistics or similar) remains. Logged to Stage 13 dead-file cleanup backlog in Session 1. Session 2 didn't open those files.
+
+**No deviations from Session 2 scope.** All six confirmed decisions plus the three additional findings landed exactly as agreed.
+
+**Next session opens with:** Stage 12.1.7 Session 3 candidate selection. Strongest remaining candidates: financial-strip overhaul (Revenue YTD / WIP / AR > 30 / Crew Utilization) — would naturally rearrange Recent Invoices + Active Projects by Type to their final placements; map marker labels (crew + project ID); or phase-aware status pills (lifts local pill pattern to shared). When that session ships, also extract the shared `<SectionHeader>` component (Tech Debt note added).
+
+---
 
 ### 2026-04-29 (evening) — Stage 12.1.7 Session 1 Shipped (Recent Invoices)
 
