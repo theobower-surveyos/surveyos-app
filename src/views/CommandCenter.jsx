@@ -4,7 +4,7 @@ import { supabase } from '../supabaseClient';
 import { DispatchProjectDrawer } from './DispatchBoard';
 import DeploymentModal from '../components/DeploymentModal';
 import IntelligenceDrawer from './IntelligenceDrawer';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -14,24 +14,40 @@ const MAP_ZOOM = 10;
 const DARK_TILES = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
 const TILE_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>';
 
-function makeGlowIcon(color) {
+// ── Map markers (Stage 12.1.7 — Session 4) ─────────────────────────
+// Benchmark / control-point SVG marker. Concentric ring + crosshair
+// lines + center dot, colored by project status. Brand-iconography
+// replacement for the iOS-palette glow pulses that pre-dated the
+// brand visual identity.
+//
+// Color mapping uses literal hex matching index.css vars so the SVG
+// renders correctly inside Leaflet's divIcon HTML (CSS variable
+// resolution inside divIcon shadow contexts is unreliable across
+// browsers).
+const MARKER_COLOR_PENDING = '#D4912A'; // var(--brand-amber)
+const MARKER_COLOR_ACTIVE  = '#1A6B6B'; // var(--brand-teal-light)
+const MARKER_COLOR_DONE    = '#10B981'; // var(--success)
+const MARKER_COLOR_DEFAULT = '#94A3B8'; // var(--text-muted)
+
+function makeBenchmarkIcon(color) {
+  const svg = `<svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg" style="display:block">
+    <line x1="9" y1="0" x2="9" y2="18" stroke="${color}" stroke-width="1" opacity="0.7" />
+    <line x1="0" y1="9" x2="18" y2="9" stroke="${color}" stroke-width="1" opacity="0.7" />
+    <circle cx="9" cy="9" r="7" fill="none" stroke="${color}" stroke-width="1.5" />
+    <circle cx="9" cy="9" r="1.5" fill="${color}" />
+  </svg>`;
   return L.divIcon({
-    className: '',
+    className: 'surveyos-benchmark-marker',
     iconSize: [18, 18],
     iconAnchor: [9, 9],
-    html: `<div style="
-      width:14px;height:14px;border-radius:50%;
-      background:${color};
-      box-shadow:0 0 8px 4px ${color}66, 0 0 20px 8px ${color}33;
-      border:2px solid rgba(255,255,255,0.25);
-      animation:mapPing 2s ease-in-out infinite;
-    "></div>`,
+    html: svg,
   });
 }
 
-const ICON_ACTIVE = makeGlowIcon('#007AFF');
-const ICON_VAULT  = makeGlowIcon('#5AC8FA');
-const ICON_DEFAULT = makeGlowIcon('#A1A1AA');
+const ICON_PENDING = makeBenchmarkIcon(MARKER_COLOR_PENDING);
+const ICON_ACTIVE  = makeBenchmarkIcon(MARKER_COLOR_ACTIVE);
+const ICON_DONE    = makeBenchmarkIcon(MARKER_COLOR_DONE);
+const ICON_DEFAULT = makeBenchmarkIcon(MARKER_COLOR_DEFAULT);
 
 // Phoenix metro landmarks used as deterministic fallback positions
 const PHX_SITES = [
@@ -54,7 +70,8 @@ function getProjectCoords(proj, index) {
 function getMarkerIcon(status) {
   const s = (status || '').toLowerCase();
   if (s === 'active' || s === 'dispatched' || s === 'in_progress') return ICON_ACTIVE;
-  if (s === 'pending' || s === 'unassigned' || s === 'field_complete') return ICON_VAULT;
+  if (s === 'pending' || s === 'unassigned') return ICON_PENDING;
+  if (s === 'field_complete') return ICON_DONE;
   return ICON_DEFAULT;
 }
 
@@ -765,10 +782,8 @@ export default function CommandCenter({ profile, projects, teamMembers, onProjec
         </div>
 
         <style>{`
-          @keyframes mapPing { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.7;transform:scale(1.3)} }
-          .leaflet-popup-content-wrapper{background:#141414!important;color:#fff!important;border-radius:12px!important;border:1px solid rgba(255,255,255,0.08)!important;box-shadow:0 10px 40px rgba(0,0,0,0.5)!important}
-          .leaflet-popup-tip{background:#141414!important}
-          .leaflet-popup-close-button{color:#555!important; display:none;}
+          .surveyos-benchmark-marker { background: transparent !important; border: none !important; cursor: pointer; }
+          .surveyos-benchmark-marker:hover svg { transform: scale(1.15); transition: transform 0.15s ease; }
         `}</style>
 
         {/* ══════════ THE DESKTOP GRID FIX ══════════ */}
@@ -778,24 +793,51 @@ export default function CommandCenter({ profile, projects, teamMembers, onProjec
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
           {/* GOD'S EYE MAP */}
-          <div style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)', height: '600px' }}>
+          {/* Map renders activeProjects only — matches Active tab + */}
+          {/* Active Projects by Type panel. Archived projects are off */}
+          {/* the operations scan. Pin click → setDrawerProject opens */}
+          {/* DispatchProjectDrawer (same as Recent Invoices), retiring */}
+          {/* the popup→IntelligenceDrawer two-drawer pattern on this */}
+          {/* surface (12.1.5 audit Tech Debt). */}
+          <div style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)', height: '600px', position: 'relative' }}>
             <MapContainer center={MAP_CENTER} zoom={MAP_ZOOM} scrollWheelZoom={true} style={{ height: '100%', width: '100%', zIndex: 1 }}>
               <TileLayer url={DARK_TILES} attribution={TILE_ATTR} />
-              {(projects || []).map((proj, idx) => {
+              {activeProjects.map((proj, idx) => {
                 const coords = getProjectCoords(proj, idx);
                 return (
-                  <Marker key={proj?.id || idx} position={coords} icon={getMarkerIcon(proj?.status)}>
-                    <Popup>
-                      <div style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', sans-serif", minWidth: '180px' }}>
-                        <strong style={{ display: 'block', fontSize: '0.95em', marginBottom: '4px', color: '#fff' }}>{proj?.project_name}</strong>
-                        <span style={{ display: 'block', fontSize: '0.72em', color: '#666', fontFamily: "'JetBrains Mono', monospace", marginBottom: '10px' }}>{proj?.id ? proj.id.substring(0, 8).toUpperCase() : '---'}</span>
-                        <button onClick={() => { setSelectedProjectId(proj?.id); setIsIntelOpen(true); }} style={{ width: '100%', padding: '8px', backgroundColor: '#007AFF', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '0.8em', fontWeight: '700', cursor: 'pointer' }}>Select</button>
-                      </div>
-                    </Popup>
-                  </Marker>
+                  <Marker
+                    key={proj?.id || idx}
+                    position={coords}
+                    icon={getMarkerIcon(proj?.status)}
+                    eventHandlers={{ click: () => setDrawerProject(proj) }}
+                  />
                 );
               })}
             </MapContainer>
+            {activeProjects.length === 0 && (
+              <div style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                backgroundColor: 'rgba(15, 23, 42, 0.85)',
+                backdropFilter: 'blur(8px)',
+                WebkitBackdropFilter: 'blur(8px)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: '8px',
+                padding: '14px 22px',
+                zIndex: 500,
+                pointerEvents: 'none',
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: '0.78em',
+                color: 'var(--text-muted)',
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                whiteSpace: 'nowrap',
+              }}>
+                No active projects in field
+              </div>
+            )}
           </div>
 
           {/* RECENT INVOICES */}

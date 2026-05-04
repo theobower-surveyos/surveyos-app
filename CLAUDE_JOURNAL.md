@@ -12,11 +12,15 @@
 
 ## ⚠️ READ THIS FIRST IF STARTING A NEW SESSION (2026-05-03)
 
-**Latest update — 2026-05-03 (later):** Stage 12.1.7 Session 3 shipped. Financial Pulse strip added to CommandCenter (4 cards: Revenue YTD / WIP Unbilled / AR > 30 Days / Crews Deployed). Shared `<SectionHeader>` extracted; RecentInvoicesPanel and ActiveProjectsByTypePanel refactored to use it. See **"2026-05-03 (later) — Stage 12.1.7 Session 3 Shipped"** entry under `## Session Log`. Four Stage 13 carry-forwards captured.
+**Latest update — 2026-05-03 (later still):** Stage 12.1.7 Session 4 shipped. Brand-iconography map markers on CommandCenter (benchmark/control-point SVG, status-colored, 18px fixed). Map render switched from raw `projects` to `activeProjects` for coherence with Active tab. Pin click opens DispatchProjectDrawer; the popup → IntelligenceDrawer two-drawer path is retired on this surface. **Stage 12.1.7 is now COMPLETE — Sessions 1-4 shipped.** See **"2026-05-03 (later still) — Stage 12.1.7 Session 4 Shipped"** entry under `## Session Log`.
 
-**Latest shipped work:** Stage 12.1.7 Session 3 — Financial Pulse strip on CommandCenter. Single commit on `feature/stakeout-qc`. Three parallel Supabase fetches (paid invoices YTD, outstanding invoices for AR aging, crew_utilization view) plus WIP derived from the existing `activeProjects` memo. Per-card error swallowing — a single fetch failure shows '—' on its card without blanking the strip.
+**Stage 12.1.7 closure summary:**
+- Session 1 (`c6572f9`): Recent Invoices panel
+- Session 2 (`7dd777c`): Active Projects by Type panel
+- Session 3 (`9a9a9d2` + `2bc4905`): Financial Pulse strip + shared `<SectionHeader>`
+- Session 4: Brand-iconography map markers + map coherence cleanup
 
-**Next session:** Stage 12.1.7 Session 4 candidates — map marker labels (crew + project ID, alert highlights), phase-aware status pills (lifts local Recent Invoices pill pattern to shared), delta indicators on Financial Pulse cards (month/quarter/YoY comparisons — the 3rd Stage 13 carry-forward from Session 3).
+**Next stage:** Stage 13 polish + testing backlog. Sequencing decisions deferred to next session start. Stage 13 carry-forwards accumulated across 12.1.7 are tracked in the Tech Debt section. Front-loaded items: branch hygiene runbook, geocoding (lat/lng on projects), status enum conversion, migration history audit.
 
 **Operating rules going forward:**
 - Don't ship features on top of incorrect schema or unrestricted RLS (12.1.5 closed this).
@@ -50,7 +54,7 @@ Project types span: boundary surveys, ALTA/NSPS, topographic, as-built, subdivis
 | Stakeout QC (chief flow + matcher + scoreboard + narratives) | Real — Stage 10/11 shipped |
 | Dispatch board (drag-drop matrix, PTO, multi-day spans) | Real — Stage 9 era, holding up |
 | DeploymentModal (project creation) | Real — Lead PM selector + priority field wired in 12.1.5 |
-| CommandCenter (financial dashboard, project list, map) | Real. Recent Invoices added 12.1.7 S1; Active Projects by Type added 12.1.7 S2; Financial Pulse strip (Revenue YTD / WIP / AR>30 / Crews Deployed) added 12.1.7 S3. All financial figures are simulated demo data, not real customers. |
+| CommandCenter (financial dashboard, project list, map) | Real. Recent Invoices added 12.1.7 S1; Active Projects by Type added 12.1.7 S2; Financial Pulse strip added 12.1.7 S3; brand-iconography map markers + active-only filter + drawer click-through added 12.1.7 S4. All financial figures are simulated demo data, not real customers. Map coordinates are deterministic seeded fallback (no lat/lng on projects yet — Stage 13). |
 | Crew app (chief mobile experience) | Real — clean, status-driven |
 | Licensed PM dashboard | Filters by `lead_pm_id` correctly post-12.1.5 |
 | ProjectDetail page | Doesn't exist; DispatchProjectDrawer pulling triple duty |
@@ -112,6 +116,7 @@ Project types span: boundary surveys, ALTA/NSPS, topographic, as-built, subdivis
 | 12.1.7 S1 | Recent Invoices section on CommandCenter | ✅ Shipped (`c6572f9`) |
 | 12.1.7 S2 | Active Projects by Type panel on CommandCenter | ✅ Shipped (2026-05-03) |
 | 12.1.7 S3 | Financial Pulse strip on CommandCenter | ✅ Shipped (2026-05-03) — collapses Stage 12.2 into 12.1.7 |
+| 12.1.7 S4 | Brand-iconography map markers on CommandCenter | ✅ Shipped (2026-05-03) — closes Stage 12.1.7 |
 | 12.2 | Financial snapshot strip on Licensed PM dashboard | 🔁 Collapsed into 12.1.7 S3 |
 | 12.3 | ProjectDetail page (scope-aware) + nav from PM dashboard | ⏳ Requires Stage 14; re-scope after 12.1.7 |
 | 13 | Polish + testing backlog (UX issues, mobile fixes, terminology cleanup, branch hygiene) | ⏳ Pending |
@@ -124,31 +129,23 @@ Project types span: boundary surveys, ALTA/NSPS, topographic, as-built, subdivis
 
 ---
 
-## Stage 12.1.7: Stitch Polish + Functional Integrations (IN PROGRESS)
+## Stage 12.1.7: Stitch Polish + Functional Integrations (✅ COMPLETE 2026-05-03)
 
-Foundation is correct (12.1.5 shipped). This stage builds functional integrations on top while incrementally improving visual polish during the same edits.
+Foundation correct (12.1.5 shipped). Stage 12.1.7 built functional integrations on top while incrementally improving visual polish. Closed in four sessions on `feature/stakeout-qc`. CommandCenter polish arc complete; the next work belongs in Stage 13.
 
-### Session 1 — SHIPPED 2026-04-29 (evening): Recent Invoices section
+### Sessions
 
-Single commit `c6572f9` on `feature/stakeout-qc`. See Session Log entry for details.
+- **Session 1** — Recent Invoices section (`c6572f9`)
+- **Session 2** — Active Projects by Type panel (`7dd777c`)
+- **Session 3** — Financial Pulse strip + shared `<SectionHeader>` extraction (`9a9a9d2` + `2bc4905` post-ship review)
+- **Session 4** — Brand-iconography map markers + map coherence cleanup (closes the stage)
 
-### Session 2 — SHIPPED 2026-05-03: Active Projects by Type panel
+### Deferred to Stage 13 (functional integration candidates not picked up in 12.1.7)
 
-Single commit on `feature/stakeout-qc`. See Session Log entry for details.
-
-### Session 3 — SHIPPED 2026-05-03 (later): Financial Pulse strip
-
-Single commit on `feature/stakeout-qc`. Four-card strip + shared `<SectionHeader>` extraction (RecentInvoices + ActiveProjectsByType refactored to use it). See Session Log entry for details.
-
-### Functional integration candidates remaining (pick based on session priority):
-
-1. **Map marker labels** — show crew + project ID on dispatch map markers. Highlight alert markers in amber. Uses existing project + assignment data.
-
-2. **Phase-aware status pills** — phase-aware terminology (FIELD WORK / IN QC / DRAFTING / READY FOR REVIEW / INVOICED / ARCHIVED) instead of generic SaaS statuses. Will lift the local Recent Invoices pill pattern to a shared component when this lands. May require status enum extension.
-
-3. **Delta indicators on Financial Pulse cards** — month-over-month / quarter / YoY comparisons next to each card value. Carry-forward from Session 3. Needs date-windowed historical aggregations.
-
-4. **Click-to-filter on Active Projects by Type** — Session 2 shipped read-only. A future session can add onClick handlers that filter the projects list to the clicked scope. Cheap to add when the next CommandCenter pass touches this neighborhood.
+1. **Phase-aware status pills** — FIELD WORK / IN QC / DRAFTING / READY FOR REVIEW / INVOICED / ARCHIVED instead of generic SaaS statuses. Lifts the local Recent Invoices pill pattern to shared. Coordinate with the `projects.status` enum conversion (same Tech Debt surface).
+2. **Delta indicators on Financial Pulse cards** — month / quarter / YoY comparisons. Needs date-windowed historical aggregations.
+3. **Click-to-filter on Active Projects by Type** — Session 2 shipped read-only.
+4. **Map enhancements** deferred from Session 4: hover/active state, value-scaled pin sizes, marker clustering at high zoom-out, geocoding (lat/lng columns + autofill from address on project create), labels next to pins (crew + project ID).
 
 **Stitch polish items to apply during the above edits:**
 
@@ -566,6 +563,8 @@ Sorted into three buckets. Items move between buckets as priorities shift.
 | 12.1.5 | Schema correctness + foundation fix | ✅ Shipped (`33e3419..6a529ab`) |
 | 12.1.7 S1 | Recent Invoices on CommandCenter | ✅ Shipped (`c6572f9`) |
 | 12.1.7 S2 | Active Projects by Type panel | ✅ Shipped (2026-05-03) |
+| 12.1.7 S3 | Financial Pulse strip + shared SectionHeader | ✅ Shipped (`9a9a9d2`) |
+| 12.1.7 S4 | Brand-iconography map markers + map coherence | ✅ Shipped (2026-05-03) — closes Stage 12.1.7 |
 | 12.2 | Financial snapshot strip | ⏳ After 12.1.7 |
 | 12.3 | ProjectDetail nav | ⏳ Re-scope after 12.1.7; depends on Stage 14 |
 | 13 | Polish + testing backlog (incl. branch hygiene) | ⏳ Pending |
@@ -781,7 +780,7 @@ Reviewed during Stage 10 scoping. **Patents not pursued during Phase 1.** Real m
 - **[TECH DEBT]** `displayCrews` filter inconsistent between DispatchBoard and CommandCenter.
 - **[TECH DEBT]** Hand-rolled test harnesses (parser, matcher, csv) — Vitest wrapper deferred.
 - **[TECH DEBT]** AssignmentDetail design points table renders all rows (488 in test data). Add pagination ~50/page.
-- **[TECH DEBT]** Two competing drawer patterns in CommandCenter (DispatchProjectDrawer vs IntelligenceDrawer).
+- **[TECH DEBT — PARTIALLY RESOLVED 12.1.7 S4]** Two competing drawer patterns in CommandCenter (DispatchProjectDrawer vs IntelligenceDrawer). S4 removed the only opener of IntelligenceDrawer on this surface (the map popup) by routing pin clicks to `setDrawerProject`. The IntelligenceDrawer component still mounts but is now unreachable — removal logged as a fresh Tech Debt item ("IntelligenceDrawer mount is dead code").
 - **[TECH DEBT]** `CommandCenter.isAdminOrOwner` includes `pm` role — misleading naming.
 - **[TECH DEBT]** `equipment.id` is `bigint`, everything else uuid. `equipment.assigned_to` is `text`, not uuid FK.
 - **[TECH DEBT]** Status columns are text, not Postgres enums. Typos won't error.
@@ -797,6 +796,12 @@ Reviewed during Stage 10 scoping. **Patents not pursued during Phase 1.** Real m
 - **[TECH DEBT]** Delta indicators on Financial Pulse cards (month-over-month / quarter / YoY comparisons). Deferred from 12.1.7 S3 — needs date-windowed historical aggregations. Add to the next CommandCenter financial pass.
 - **[TECH DEBT]** "Revenue" label collision on CommandCenter. Surfaced during 12.1.7 S3 visual review: the top stat strip's "Revenue" metric (sum of `contract_fee` on visible projects, ~$6,900 in test data — pipeline / booked value) and Financial Pulse's "Revenue YTD" (sum of paid `invoice_amount` for the current year, $12,450 in test data) are both valid but share the same root word, which reads as a contradiction. Reconcile in Stage 13 by either renaming the top stat (candidates: `Pipeline Value`, `Booked Revenue`, `Contracted Pipeline`) or aligning both to a single definition. Don't ship a third "Revenue" surface until this collision is resolved.
 - **[TECH DEBT]** Status label vs tab category contradiction on CommandCenter project list. The Active tab includes projects whose status renders as `PENDING`, which reads as "active but pending" — internally consistent (the queue tab is operational state, the status label is lifecycle state) but visually contradictory at a glance. Stage 13 polish: introduce a status-display map (e.g., `pending → Scheduled`, `in_progress → In Progress`, `completed → Completed Field Work`, `archived → Archived`) so user-facing chrome doesn't mirror raw enum strings. Coordinate with the Tech Debt note about converting `projects.status` to a Postgres enum — same surface area, do them together.
+- **[TECH DEBT]** Map shows decorative coordinates. Surfaced during 12.1.7 S4: `projects` has no `lat` / `lng` / `geom` columns. `getProjectCoords` in `CommandCenter.jsx` reads `proj.lat && proj.lng` (always falsy) and falls to a deterministic seeded fallback against `PHX_SITES` (10 hardcoded Phoenix-metro lat/lng pairs) keyed by UUID hash + project index. **Every pin on the map is at a fake coordinate.** Stage 13: add `lat numeric` and `lng numeric` columns to `projects` + autofill from `address` on project create via a forward-geocoding edge function (e.g., Mapbox / Google Geocoding). The seeded fallback should remain as a safety net for projects whose geocoding fails.
+- **[TECH DEBT]** `(projects || []).map` → `activeProjects` migration sweep. Surfaced during 12.1.7 S4: the map render iterated raw `projects` (including 15 archived in current data) instead of the search-aware `activeProjects` memo, breaking coherence with the Active tab. Resolved on the map surface in S4. Stage 13 sweep: grep CommandCenter and other views (LicensedPmDashboard, DispatchBoard, ProfitAnalytics if still alive) for `(projects || []).map` references and audit which should migrate to `activeProjects` (or an equivalent filtered memo) for coherence with their Active tab analog.
+- **[TECH DEBT]** Hover/active state on map pins. Deferred from 12.1.7 S4. The current implementation has a CSS `:hover` scale transform applied to the SVG (`.surveyos-benchmark-marker:hover svg { transform: scale(1.15) }`) but no "active project" highlight when something else on CommandCenter is selected. Stage 13: when drawer or list selection focuses a project, give its pin a halo / weight-bump.
+- **[TECH DEBT]** Value-scaled pin sizes. Deferred from 12.1.7 S4. Bigger contracts → bigger pins gives a spatial money-flow read at a glance. Needs a sensible scale (cube root of contract_fee?) and a min/max clamp. Defer until production data exists with realistic value distributions.
+- **[TECH DEBT]** Marker clustering at high zoom-out. Deferred from 12.1.7 S4. Not visible at current data volume (3 active pins) but will surface once firms have 50+ active projects in close geographic proximity. Use `react-leaflet-cluster` or `leaflet.markercluster` when the time comes — both honor the `divIcon` style we ship in S4.
+- **[TECH DEBT]** `IntelligenceDrawer` mount on CommandCenter is now dead code. Surfaced during 12.1.7 S4: dropping the map popup retired the only call site that opened it (`setIsIntelOpen(true)`). The component still mounts at `CommandCenter.jsx:958` with `isOpen={isIntelOpen}` permanently false, plus `setSelectedProjectId`/`setIsIntelOpen` setters that are no longer invoked. Stage 13 cleanup: remove the IntelligenceDrawer mount + its state + its import from CommandCenter unless another opener is added intentionally.
 
 ### Deferred UX/visual polish (Stage 13)
 
@@ -894,6 +899,66 @@ Stage 12.1 built scaffolding on a flawed `assigned_to` foundation. Stage 12.1.5 
 ---
 
 ## Session Log
+
+### 2026-05-03 (later still) — Stage 12.1.7 Session 4 Shipped (Map markers + map coherence) — STAGE 12.1.7 COMPLETE
+
+**What shipped:** Brand-iconography map markers on CommandCenter (benchmark/control-point SVG, 18px, status-colored). Map render switched from raw `projects` to `activeProjects`. Pin click opens DispatchProjectDrawer; popup → IntelligenceDrawer two-drawer path retired on this surface. Empty-state overlay when `activeProjects` is empty. Single commit on `feature/stakeout-qc`.
+
+**Components / helpers updated in `CommandCenter.jsx`:**
+- New `makeBenchmarkIcon(color)` — `L.divIcon` wrapping an inline SVG with: outer ring (r=7, 1.5px stroke), full-width crosshair lines (vertical + horizontal, 1px stroke at 0.7 opacity), center dot (r=1.5, filled). 18×18 viewBox.
+- New `MARKER_COLOR_*` constants — literal hex matching the index.css brand vars (CSS variable resolution inside Leaflet's divIcon shadow context is unreliable across browsers, so inline hex):
+  - `MARKER_COLOR_PENDING = '#D4912A'` (var(--brand-amber); same value as Financial Pulse AR card and InvoiceStatusPill OVERDUE — confirmed visible on dark CARTO basemap)
+  - `MARKER_COLOR_ACTIVE = '#1A6B6B'` (var(--brand-teal-light))
+  - `MARKER_COLOR_DONE = '#10B981'` (var(--success); reserved for `field_complete`)
+  - `MARKER_COLOR_DEFAULT = '#94A3B8'` (var(--text-muted))
+- `getMarkerIcon(status)` updated to map `pending`/`unassigned` → ICON_PENDING (amber), `active`/`dispatched`/`in_progress` → ICON_ACTIVE (teal), `field_complete` → ICON_DONE (mint), default → ICON_DEFAULT (muted).
+- Removed `makeGlowIcon`, the iOS-palette `ICON_ACTIVE`/`ICON_VAULT`/`ICON_DEFAULT` constants, and the `@keyframes mapPing` rule. The pulse animation is gone — too noisy for an operations scan.
+- Added `.surveyos-benchmark-marker` class with `:hover svg { transform: scale(1.15) }` for a small affordance on hover. No active-project halo (deferred to Stage 13).
+
+**Render changes:**
+- Map iteration switched from `(projects || []).map` to `activeProjects.map` — coherent with the Active tab + Active Projects by Type panel. Archived projects (15 of 18 in current data) no longer pollute the map. Search-narrowing inherits because `activeProjects` already respects `searchQuery`.
+- `<Marker>` now uses `eventHandlers={{ click: () => setDrawerProject(proj) }}` — same drawer the project list rows and Recent Invoices use. Drops the `<Popup>` and the IntelligenceDrawer Select-button path. `Popup` import also removed from `react-leaflet`.
+- Map wrapper gains `position: 'relative'` so the empty-state overlay can position absolutely centered.
+- Empty-state overlay (`activeProjects.length === 0`): centered card with backdrop blur, `var(--bg-dark)` at 85% opacity, hairline border, mono text "NO ACTIVE PROJECTS IN FIELD" — descriptive only, no CTA (the `+ New Deployment` button lives directly above the map).
+
+**Visual states verified (same approach as Sessions 1-3):**
+- Populated: 3 amber benchmark markers for the 3 active pending projects
+- Empty: backdrop-blurred overlay reads "NO ACTIVE PROJECTS IN FIELD"
+- Loading: defensive — `activeProjects` is derived from prop, parent loading shows greeting first; not a real fail mode here
+- Error (per-pin): the `getProjectCoords` fallback handles missing/malformed coords by seeding from UUID. Markers don't throw on bad data; if a coord pair is malformed, Leaflet silently skips that marker without nuking the map.
+
+**Pre-existing inconsistencies RESOLVED in this session:**
+1. **Map showed all projects, not active.** The `(projects || []).map` pattern pre-dated `activeProjects` (12.1.5 era). Resolved on the map surface; Stage 13 sweep should audit other call sites for the same drift.
+2. **Two-drawer pattern on map surface.** Map popup opened IntelligenceDrawer; project list and Recent Invoices opened DispatchProjectDrawer. The 12.1.5 audit flagged this as Tech Debt. Resolved on the map surface by dropping the popup entirely. The IntelligenceDrawer mount is now dead code in CommandCenter — logged as a new Tech Debt item for Stage 13 cleanup.
+
+**Five Stage 13 carry-forwards captured (added to Tech Debt):**
+1. Add `lat`/`lng` columns to `projects` + autofill from `address` on project create. Map currently uses deterministic seeded fallback from UUID hash, not real coordinates.
+2. Sweep CommandCenter and other views (LicensedPmDashboard, DispatchBoard, ProfitAnalytics if alive) for `(projects || []).map` references; audit which should migrate to `activeProjects` for coherence.
+3. Hover / active-project highlight state on map pins (basic CSS hover ships in S4; full active-selection halo deferred).
+4. Value-scaled pin sizes — bigger contracts → bigger pins. Defer until production data has realistic value distributions.
+5. Marker clustering at high zoom-out — not visible at 3 active pins; will surface at 50+ active projects per firm. Use `react-leaflet-cluster` or `leaflet.markercluster` when needed.
+
+**Plus one fresh Tech Debt:** `IntelligenceDrawer` mount on CommandCenter is now dead code (no opener after S4). Stage 13: remove the mount + its state + its import.
+
+**Visual decision rationale:**
+- 18px fixed size — enough crosshair detail to read as benchmark/control-point iconography, small enough that 50+ pins won't overcrowd Phoenix metro.
+- Crosshair lines at full viewBox width + 0.7 opacity — establishes the "tactical instrument" feel from design exploration `02-commandcenter-field-awareness.png` without overwhelming the basemap.
+- No glow / no animation — pulse animations belong in dev-mode debugging or single-active-event scans (e.g., a "live RTK" indicator), not in steady-state operations. The makeGlowIcon path was inherited from an earlier iteration and didn't survive the brand visual review.
+- `--brand-amber` (#D4912A, saturated gold) over `--brand-teal-light` (#1A6B6B) for pending — amber reads as "warning / awaiting action," and pending projects are exactly that.
+
+**Build pass:** `✓ built in 5.11s`, zero new warnings, bundle dropped ~1KB (popup path removed).
+
+**Stage 12.1.7 closure summary:**
+- Session 1 (`c6572f9`): Recent Invoices panel
+- Session 2 (`7dd777c`): Active Projects by Type panel
+- Session 3 (`9a9a9d2` + `2bc4905`): Financial Pulse strip + shared `<SectionHeader>`
+- Session 4 (this commit): Brand-iconography map markers + map coherence
+
+CommandCenter polish arc complete. Sessions 1-4 took the dashboard from a generic-SaaS surface to a recognizably-SurveyOS operations scan: financial signals an owner can read at a glance, project-type breakdown that communicates "OS for ALL surveying," recent invoices visible, and a map that reads as a benchmark/control-point chart instead of a generic Leaflet demo.
+
+**Next stage:** Stage 13 polish + testing backlog. Sequencing decisions deferred to next session start. Front-loaded items per the existing journal: branch hygiene runbook (front-loaded as the first Stage 13 task), security hardening (remaining Sandbox Master policies), schema cleanup (status enum, dual-tracking resolution, geocoding columns), migration history audit, status-display map for user-facing chrome.
+
+---
 
 ### 2026-05-03 (later) — Stage 12.1.7 Session 3 Shipped (Financial Pulse strip)
 
